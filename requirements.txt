@@ -1,0 +1,10 @@
+tefas-crawler
+gspread
+google-auth-oauthlib
+google-auth-httplib2
+pandas
+python-dateutil
+pytz
+numpy
+tqdm
+openpyxl
