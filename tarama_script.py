@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 from tefas import Crawler
 # from google.colab import auth # Colab'a özel olduğu için kaldırıldı
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import concurrent.futures
 import traceback
 import os # Ortam değişkenlerini okumak için eklendi
