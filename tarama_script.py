@@ -233,7 +233,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                         is_desired_trend = True
 
                 current_fon_data['is_desired_trend'] = bool(is_desired_trend)
-                current_fon_data['_DEBUG_WeeklyChanges_RAW'] = str([f"{x:.2f}" if not pd.isna(x) else "NaN" for x in weekly_changes_list])
+                current_fon_data['_DEBUG_WeeklyChanges_RAW'] = "'" + str([f"{x:.2f}" if not pd.isna(x) else "NaN" for x in weekly_changes_list])
                 current_fon_data['_DEBUG_IsDesiredTrend'] = bool(is_desired_trend)
                 weekly_results_dict[fon_kodu_completed] = current_fon_data
             except Exception as exc:
