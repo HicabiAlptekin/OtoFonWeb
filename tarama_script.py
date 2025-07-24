@@ -27,6 +27,33 @@ TIMEZONE = pytz.timezone('Europe/Istanbul')
 OUTPUT_CSV_FILENAME_TEKIL = "Fon_Verileri_Tekil.csv"
 OUTPUT_CSV_FILENAME_HAFTALIK = "Fon_Verileri_Haftalik.csv"
 
+# --- Rakam Formatlama Fonksiyonu (Yeni Eklenen) ---
+def formatla_sayi(sayi):
+    """
+    Bu fonksiyon sayıyı Google Sheets'te düzgün görünecek formata çevirir.
+    Örnek: 1234567 -> 1.234,567000 veya 123 -> 0,000123
+    """
+    if pd.isna(sayi):
+        return None
+    sayi_str = str(sayi).replace('.', '').replace(',', '')  # Temizle
+    if not sayi_str.isdigit():
+        return sayi  # Sayı değilse dokunma
+    
+    # Virgül ayırıcı ve ondalık basamaklar için özel formatlama
+    # Google Sheets'e yazarken float olarak gönderilmesi tercih edilir,
+    # bu formatlama daha çok CSV çıktısı veya manuel görüntüleme içindir.
+    try:
+        float_sayi = float(sayi)
+        # Eğer sayının tam kısmı yoksa ve ondalık kısmı çok küçükse (örneğin 0.000123)
+        if 0 < abs(float_sayi) < 1:
+            return f"0,{str(float_sayi).split('.')[-1].ljust(6, '0')[:6]}"
+        else:
+            # Büyük sayılar için binlik ayırıcı ve 6 ondalık basamak
+            return f"{float_sayi:,.6f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except ValueError:
+        return sayi # Dönüştürülemezse orijinali döndür
+
+
 # --- Google Sheets Kimlik Doğrulama Fonksiyonu ---
 def google_sheets_auth_github():
     print("\n🔄 Google Hizmet Hesabı ile kimlik doğrulaması yapılıyor...")
@@ -159,6 +186,10 @@ def apply_cell_format_request(worksheet_id, row_index, num_columns, is_highlight
         }
     }
 
+---
+## Tekil Tarama Fonksiyonu
+
+```python
 # --- TEKİL TARAMA FONKSİYONU ---
 def run_scan_to_gsheets(scan_date: date, gc):
     start_time_main = time.time()
@@ -238,16 +269,16 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
+        
         # CSV için veri temizleme ve formatlama
         df_for_csv = results_df_tekil.copy()
+        # "Fiyat", "Günlük %" gibi sayısal sütunları formatla
+        sayi_sutunlari_csv = [col for col in df_for_csv.columns if df_for_csv[col].dtype in ['float64', 'float32'] or col == 'Fiyat']
+        for sutun in sayi_sutunlari_csv:
+            df_for_csv[sutun] = df_for_csv[sutun].apply(formatla_sayi)
+
         for col in df_for_csv.columns:
-            if col == 'Fiyat':
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.6f}".replace(".", ",") if pd.notna(x) else None)
-            elif df_for_csv[col].dtype in ['float64', 'float32']:
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if pd.notna(x) else None)
-            elif df_for_csv[col].dtype == 'object':
+            if df_for_csv[col].dtype == 'object':
                 df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
 
         # CSV dosyasına kaydet
@@ -259,7 +290,7 @@ def run_scan_to_gsheets(scan_date: date, gc):
             print(f"❌ CSV dosyasına yazma hatası (Tekil): {e}")
             traceback.print_exc()
 
-        # Google Sheets için veri temizleme
+        # Google Sheets için veri temizleme (sayısal formatlama burada yapılmaz, Sheets kendi ayarını kullanır)
         df_to_gsheets = results_df_tekil.copy()
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
@@ -315,6 +346,10 @@ def run_scan_to_gsheets(scan_date: date, gc):
           f"⏱️ Toplam süre: {((end_time_main_tekil - start_time_main) / 60):.2f} dakika\n" +
           "="*50)
 
+---
+## Haftalık Tarama Fonksiyonu
+
+```python
 # --- HAFTALIK TARAMA FONKSİYONU ---
 def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     start_time_main = time.time()
@@ -408,13 +443,16 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
     if not results_df.empty:
         results_df = results_df[existing_cols_for_df].sort_values(by='Değerlendirme', ascending=False, na_position='last')
-        # CSV için veri temizleme
+        
+        # CSV için veri temizleme ve formatlama
         df_for_csv = results_df.copy()
+        # Sayısal sütunları formatla (sadece 'Değerlendirme' ve haftalık değişim sütunları)
+        sayi_sutunlari_csv = [col for col in df_for_csv.columns if df_for_csv[col].dtype in ['float64', 'float32'] and col != 'is_desired_trend']
+        for sutun in sayi_sutunlari_csv:
+            df_for_csv[sutun] = df_for_csv[sutun].apply(formatla_sayi)
+
         for col in df_for_csv.columns:
-            if df_for_csv[col].dtype in ['float64', 'float32']:
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if pd.notna(x) else None)
-            elif df_for_csv[col].dtype == 'object':
+            if df_for_csv[col].dtype == 'object' and col not in ['is_desired_trend', '_DEBUG_IsDesiredTrend', '_DEBUG_WeeklyChanges_RAW']:
                 df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
 
         # CSV dosyasına kaydet
@@ -426,7 +464,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
             print(f"❌ CSV dosyasına yazma hatası (Haftalık): {e}")
             traceback.print_exc()
 
-        # Google Sheets için veri temizleme
+        # Google Sheets için veri temizleme (sayısal formatlama burada yapılmaz)
         df_to_gsheets = results_df.copy()
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
@@ -456,7 +494,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
         if not df_to_gsheets.empty:
             worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(),
-                            value_input_option='RAW')
+                             value_input_option='RAW')
 
             format_requests = []
             for idx, row in results_df.reset_index(drop=True).iterrows():
