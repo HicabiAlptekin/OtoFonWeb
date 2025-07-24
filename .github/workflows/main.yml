@@ -3,15 +3,8 @@ name: Zamanlanmış Tarama Scripti
 on:
   schedule:
     # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
-    # Cron zamanlaması UTC'ye göre ayarlanmalıdır.
-    # Türkiye saati (GMT+3) 11:00, UTC 08:00'e denk gelir.
     - cron: '0 8 * * 1-5'
-  workflow_dispatch: # Manuel çalıştırma için ekledik
-
-permissions:
-  contents: write # Depo içeriğine yazma izni
-  pages: write # GitHub Pages'a yazma izni (JamesIves/github-pages-deploy-action için gerekli)
-  id-token: write # OpenID Connect için gerekli (GitHub Pages deploy action için olabilir)
+  workflow_dispatch:
 
 jobs:
   build:
@@ -29,27 +22,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
-            # requirements.txt dosyasının içeriğini kontrol etmek için 'cat' komutu eklendi
-            cat requirements.txt
             pip install -r requirements.txt
+            pip install ipywidgets jupyter
           else
-            echo "requirements.txt dosyası bulunamadı! Lütfen kontrol edin."
-            exit 1 # Dosya bulunamazsa işlemi durdur
+            echo "requirements.txt bulunamadı!"
+            exit 1
           fi
 
       - name: Tarama Scriptini Çalıştır
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: python tarama_script.py # tarama_script.py olarak düzeltildi
-
-      - name: CSV Dosyalarını GitHub Pages'a Yükle
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: . # Tüm depoyu değil, sadece belirtilen dosyaları yüklemek için
-          clean: true
-          targets: | # "files" yerine "targets" kullanılmalı ve yüklemek istediğiniz dosyalar belirtilmeli
-            Fon_Verileri_Tekil.csv
-            Fon_Verileri_Haftalik.csv
-            # Dizin.html dosyasını belirtmedim çünkü tarama scripti tarafından üretildiğinden emin değilim.
-            # Eğer tarama scripti tarafından üretiliyorsa, onu da buraya ekleyebilirsiniz.
+        run: python tarama_script.py
