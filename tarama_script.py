@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# GÜNCELLENMİŞ FON TARAMA ARACI (v3 - Hata Düzeltmeleri ve Tarih Ekleme)
+# GÜNCELLENMİŞ FON TARAMA ARACI (v4 - Hata Ayıklama Odaklı)
 
 # --- Kütüphaneleri Import Etme ---
 import pandas as pd
@@ -85,10 +85,12 @@ def calculate_change(current_price, past_price):
         return ((float(current_price) - float(past_price)) / float(past_price)) * 100
     except (ValueError, TypeError): return np.nan
 
+# --- GÜNCELLENMİŞ VERİ ÇEKME FONKSİYONU (HATA AYIKLAMA İLE) ---
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall = args
     global tefas_crawler_global
     if tefas_crawler_global is None: return fon_kodu, pd.DataFrame()
+    
     try:
         fon_data = tefas_crawler_global.fetch(
             start=start_date_overall.strftime("%Y-%m-%d"),
@@ -100,8 +102,12 @@ def fetch_data_for_fund_parallel(args):
             fon_data['date'] = pd.to_datetime(fon_data['date'], errors='coerce').dt.date
             fon_data.dropna(subset=['date'], inplace=True)
             return fon_kodu, fon_data.sort_values(by='date', ascending=False)
-    except Exception:
+    except Exception as e:
+        # YENİ: Hata ayıklama için hatayı loglara yazdır
+        print(f"❌ Hata (veri çekme - {fon_kodu}): {e}")
+        # Hata durumunda boş bir DataFrame döndürerek diğer fonların devam etmesini sağla
         return fon_kodu, pd.DataFrame()
+    
     return fon_kodu, pd.DataFrame()
 
 # --- TEKİL TARAMA FONKSİYONU ---
@@ -109,7 +115,6 @@ def run_scan(scan_date: date, gc):
     start_time_main = time.time()
     all_fon_data_df = load_takasbank_fund_list()
     if all_fon_data_df.empty:
-        print("❌ Taranacak fon listesi alınamadı. İşlem durduruldu.")
         return
 
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Tarih: {scan_date.strftime('%d.%m.%Y')} ---")
@@ -150,19 +155,16 @@ def run_scan(scan_date: date, gc):
             degisimler['YB %'] = calculate_change(fiyat_son, fiyat_yb_once)
         
         fon_adi = all_fon_data_df.loc[all_fon_data_df['Fon Kodu'] == fon_kodu, 'Fon Adı'].iloc[0]
-        # YENİ: Tarama Tarihi eklendi
         result_row = {'Tarama Tarihi': scan_date.strftime('%Y-%m-%d'), 'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, 'Son Fiyat': fiyat_son, **degisimler}
         results_list_tekil.append(result_row)
 
     results_df_tekil = pd.DataFrame(results_list_tekil)
-    # YENİ: Sütun sırası güncellendi
     column_order = ['Tarama Tarihi', 'Fon Kodu', 'Fon Adı', 'Son Fiyat', 'Günlük %', 'Haftalık %', '2 Haftalık %', 'Aylık %',
                     '3 Aylık %', '6 Aylık %', '1 Yıllık %', 'YB %']
     existing_cols_tekil = [col for col in column_order if col in results_df_tekil.columns]
     
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil]
-        # YENİ: Sıralama yapmadan önce 'YB %' sütununun varlığını kontrol et
         if 'YB %' in results_df_tekil.columns:
             results_df_tekil = results_df_tekil.sort_values(by='YB %', ascending=False, na_position='last')
     
@@ -187,8 +189,6 @@ def run_scan(scan_date: date, gc):
             worksheet_tekil.update([df_to_gsheets_tekil.columns.values.tolist()] + df_to_gsheets_tekil.values.tolist(), value_input_option='USER_ENTERED')
             body_resize_tekil = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet_tekil.id, "dimension": "COLUMNS"}}}]}
             spreadsheet.batch_update(body_resize_tekil)
-        else:
-            print("ℹ️ Google Sheets'e yazılacak veri bulunmuyor.")
     except Exception as e:
         print(f"❌ Google Sheets'e yazma hatası: {e}")
 
