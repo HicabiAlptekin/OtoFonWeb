@@ -238,41 +238,36 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
-        # CSV için veri temizleme ve formatlama
+        # CSV için veri temizleme
         df_for_csv = results_df_tekil.copy()
         for col in df_for_csv.columns:
             if col == 'Fiyat':
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.6f}".replace(".", ",") if isinstance(x, (int, float)) else x)
+                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
+                    lambda x: f"{x:,.6f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
             elif df_for_csv[col].dtype in ['float64', 'float32']:
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) else x)
+                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
+                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
             elif df_for_csv[col].dtype == 'object':
                 df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
-        
+
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_TEKIL}' dosyasına kaydediliyor...")
-            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_TEKIL, index=False, encoding='utf-8-sig', decimal=',', float_format='%.6f')
+            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_TEKIL, index=False, encoding='utf-8-sig', decimal=',')
             print(f"✅ Veriler başarıyla '{OUTPUT_CSV_FILENAME_TEKIL}' dosyasına kaydedildi.")
         except Exception as e:
             print(f"❌ CSV dosyasına yazma hatası (Tekil): {e}")
             traceback.print_exc()
 
-        # Google Sheets için veri temizleme ve formatlama
+        # Google Sheets için veri temizleme
         df_to_gsheets = results_df_tekil.copy()
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
-            if col == 'Fiyat':
-                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.6f}".replace(".", ",") if isinstance(x, (int, float)) else None)
-            elif df_to_gsheets[col].dtype in ['float64', 'float32']:
-                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) else None)
+            if df_to_gsheets[col].dtype in ['float64', 'float32']:
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(df_to_gsheets[col]), None)
             elif df_to_gsheets[col].dtype == 'object':
-                df_to_gsheets[col] = df_to_gsheets[col].apply(
-                    lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else str(x))
-        
+                df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
+
         # Veri örneğini logla
         print(f"İlk 5 satır (Google Sheets'e yazılacak):")
         print(df_to_gsheets.head().to_string())
@@ -292,7 +287,7 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
         if not df_to_gsheets.empty:
             data_to_upload_tekil = [df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist()
-            worksheet_tekil.update(values=data_to_upload_tekil, range_name='A1', value_input_option='USER_ENTERED')
+            worksheet_tekil.update(values=data_to_upload_tekil, range_name='A1', value_input_option='RAW')
             body_resize_tekil = {
                 "requests": [{
                     "autoResizeDimensions": {
@@ -413,36 +408,35 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
     if not results_df.empty:
         results_df = results_df[existing_cols_for_df].sort_values(by='Değerlendirme', ascending=False, na_position='last')
-        # CSV için veri temizleme ve formatlama
+        # CSV için veri temizleme
         df_for_csv = results_df.copy()
         for col in df_for_csv.columns:
             if df_for_csv[col].dtype in ['float64', 'float32']:
-                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) else x)
+                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
+                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
             elif df_for_csv[col].dtype == 'object':
-                df_for_csv[col] = df_for_csv[col].apply(
-                    lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
-        
+                df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
+
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_HAFTALIK}' dosyasına kaydediliyor...")
-            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_HAFTALIK, index=False, encoding='utf-8-sig', decimal=',', float_format='%.4f')
+            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_HAFTALIK, index=False, encoding='utf-8-sig', decimal=',')
             print(f"✅ Veriler başarıyla '{OUTPUT_CSV_FILENAME_HAFTALIK}' dosyasına kaydedildi.")
         except Exception as e:
             print(f"❌ CSV dosyasına yazma hatası (Haftalık): {e}")
             traceback.print_exc()
 
-        # Google Sheets için veri temizleme ve formatlama
+        # Google Sheets için veri temizleme
         df_to_gsheets = results_df.copy()
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
             if df_to_gsheets[col].dtype in ['float64', 'float32']:
-                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf, np.nan], None).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) else None)
-            elif df_to_gsheets[col].dtype == 'object':
-                df_to_gsheets[col] = df_to_gsheets[col].apply(
-                    lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else str(x))
-        
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(df_to_gsheets[col]), None)
+            elif df_to_gsheets[col].dtype == 'object' and col not in ['is_desired_trend', '_DEBUG_IsDesiredTrend', '_DEBUG_WeeklyChanges_RAW']:
+                df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
+            if col in ['is_desired_trend', '_DEBUG_IsDesiredTrend']:
+                df_to_gsheets[col] = df_to_gsheets[col].astype(bool)
+
         # Veri örneğini logla
         print(f"İlk 5 satır (Google Sheets'e yazılacak):")
         print(df_to_gsheets.head().to_string())
@@ -462,7 +456,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
         if not df_to_gsheets.empty:
             worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(),
-                            value_input_option='USER_ENTERED')
+                            value_input_option='RAW')
 
             format_requests = []
             for idx, row in results_df.reset_index(drop=True).iterrows():
