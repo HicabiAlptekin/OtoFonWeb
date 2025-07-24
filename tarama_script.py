@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# GÜNCELLENMİŞ FON TARAMA ARACI (GitHub Actions & CSV Uyumlu)
+# GÜNCELLENMİŞ FON TARAMA ARACI (v3 - Hata Düzeltmeleri ve Tarih Ekleme)
 
 # --- Kütüphaneleri Import Etme ---
 import pandas as pd
@@ -23,13 +23,11 @@ F_COLS = ["date", "price"]
 SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
 WORKSHEET_NAME_MANUAL = 'veriler'
 TIMEZONE = pytz.timezone('Europe/Istanbul')
-# --- OLUŞTURULACAK CSV DOSYASININ ADI ---
 OUTPUT_CSV_FILENAME = "Fon_Verileri.csv"
 
-
-# --- Google Sheets Kimlik Doğrulama Fonksiyonu ---
+# --- Google Sheets Kimlik Doğrulama ---
 def google_sheets_auth_github():
-    print("\n Google Hizmet Hesabı ile kimlik doğrulaması yapılıyor...")
+    print("\nGoogle Hizmet Hesabı ile kimlik doğrulaması yapılıyor...")
     try:
         gcp_service_account_key_json = os.getenv('GCP_SERVICE_ACCOUNT_KEY')
         if not gcp_service_account_key_json:
@@ -50,12 +48,11 @@ try:
     print("TEFAS Crawler başarıyla başlatıldı.")
 except Exception as e:
     print(f"TEFAS Crawler başlatılırken hata: {e}")
-    traceback.print_exc()
     tefas_crawler_global = None
 
 # --- Yardımcı Fonksiyonlar ---
 def load_takasbank_fund_list():
-    print(f" Takasbank'tan güncel fon listesi yükleniyor...")
+    print("Takasbank'tan güncel fon listesi yükleniyor...")
     try:
         df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
         df_data = df_excel[['Fon Adı', 'Fon Kodu']].copy()
@@ -75,7 +72,7 @@ def get_price_on_or_before(df_fund_history, target_date: date):
         return df_filtered.sort_values(by='date', ascending=False)['price'].iloc[0]
     return np.nan
 
-def get_price_at_date_or_next_available(df_fund_history, target_date: date, max_lookforward_days: int = 5):
+def get_price_at_date_or_next_available(df_fund_history, target_date: date, max_lookforward_days: int = 7):
     if df_fund_history is None or df_fund_history.empty or target_date is None: return np.nan
     future_limit_date = target_date + timedelta(days=max_lookforward_days)
     first_available = df_fund_history[(df_fund_history['date'] >= target_date) & (df_fund_history['date'] <= future_limit_date)].sort_values(by='date', ascending=True)
@@ -83,18 +80,15 @@ def get_price_at_date_or_next_available(df_fund_history, target_date: date, max_
     return np.nan
 
 def calculate_change(current_price, past_price):
-    if pd.isna(current_price) or pd.isna(past_price) or past_price is None or current_price is None: return np.nan
+    if pd.isna(current_price) or pd.isna(past_price) or past_price == 0: return np.nan
     try:
-        current_price_float, past_price_float = float(current_price), float(past_price)
-        if past_price_float == 0: return np.nan
-        return ((current_price_float - past_price_float) / past_price_float) * 100
+        return ((float(current_price) - float(past_price)) / float(past_price)) * 100
     except (ValueError, TypeError): return np.nan
 
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall = args
     global tefas_crawler_global
     if tefas_crawler_global is None: return fon_kodu, pd.DataFrame()
-    
     try:
         fon_data = tefas_crawler_global.fetch(
             start=start_date_overall.strftime("%Y-%m-%d"),
@@ -107,7 +101,6 @@ def fetch_data_for_fund_parallel(args):
             fon_data.dropna(subset=['date'], inplace=True)
             return fon_kodu, fon_data.sort_values(by='date', ascending=False)
     except Exception:
-        # Hata durumunda boş bir DataFrame döndür
         return fon_kodu, pd.DataFrame()
     return fon_kodu, pd.DataFrame()
 
@@ -120,7 +113,7 @@ def run_scan(scan_date: date, gc):
         return
 
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Tarih: {scan_date.strftime('%d.%m.%Y')} ---")
-    genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, days=15)
+    genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, days=30)
     
     fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, scan_date)
                       for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
@@ -157,26 +150,29 @@ def run_scan(scan_date: date, gc):
             degisimler['YB %'] = calculate_change(fiyat_son, fiyat_yb_once)
         
         fon_adi = all_fon_data_df.loc[all_fon_data_df['Fon Kodu'] == fon_kodu, 'Fon Adı'].iloc[0]
-        result_row = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, 'Son Fiyat': fiyat_son, **degisimler}
+        # YENİ: Tarama Tarihi eklendi
+        result_row = {'Tarama Tarihi': scan_date.strftime('%Y-%m-%d'), 'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, 'Son Fiyat': fiyat_son, **degisimler}
         results_list_tekil.append(result_row)
 
     results_df_tekil = pd.DataFrame(results_list_tekil)
-    column_order = ['Fon Kodu', 'Fon Adı', 'Son Fiyat', 'Günlük %', 'Haftalık %', '2 Haftalık %', 'Aylık %',
+    # YENİ: Sütun sırası güncellendi
+    column_order = ['Tarama Tarihi', 'Fon Kodu', 'Fon Adı', 'Son Fiyat', 'Günlük %', 'Haftalık %', '2 Haftalık %', 'Aylık %',
                     '3 Aylık %', '6 Aylık %', '1 Yıllık %', 'YB %']
     existing_cols_tekil = [col for col in column_order if col in results_df_tekil.columns]
-    if not results_df_tekil.empty:
-        results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
     
-    # --- VERİLERİ CSV DOSYASINA KAYDETME ---
+    if not results_df_tekil.empty:
+        results_df_tekil = results_df_tekil[existing_cols_tekil]
+        # YENİ: Sıralama yapmadan önce 'YB %' sütununun varlığını kontrol et
+        if 'YB %' in results_df_tekil.columns:
+            results_df_tekil = results_df_tekil.sort_values(by='YB %', ascending=False, na_position='last')
+    
     try:
         print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME}' dosyasına kaydediliyor...")
         results_df_tekil.to_csv(OUTPUT_CSV_FILENAME, index=False, encoding='utf-8-sig')
         print(f"✅ Veriler başarıyla '{OUTPUT_CSV_FILENAME}' dosyasına kaydedildi.")
     except Exception as e:
         print(f"❌ CSV dosyasına yazma hatası: {e}")
-    # --- CSV KAYDETME ADIMI SONU ---
-
-    # --- Google Sheets'e Yazma ---
+    
     try:
         print("\nGoogle Sheets'e veriler yazılıyor...")
         spreadsheet = gc.open_by_key(SHEET_ID)
