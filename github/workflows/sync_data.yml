@@ -20,11 +20,11 @@ jobs:
 
           # Veri dosyasını ana dizine kopyala
           # EĞER VERİ DOSYANIZIN ADI 'Fon_Verileri.csv' DEĞİLSE, BU SATIRI DÜZENLEYİN!
-          cp private_repo/Fon_Verileri.csv .
+          cp private_repo/tarama_script.py .
 
       - name: Veri Dosyasını Güncelle
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Veri dosyası otomatik olarak güncellendi"
           # Sadece belirtilen dosya değiştiyse commit at
-          file_pattern: "Fon_Verileri.csv"
+          file_pattern: "tarama_script.py"
