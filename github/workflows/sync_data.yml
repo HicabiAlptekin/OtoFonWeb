@@ -18,13 +18,14 @@ jobs:
           # ACCESS_TOKEN sırrını kullanarak özel depoyu klonla
           git clone https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/HicabiAlptekin/OtoFon.git private_repo
 
-          # Veri dosyasını ana dizine kopyala
-          # EĞER VERİ DOSYANIZIN ADI 'Fon_Verileri.csv' DEĞİLSE, BU SATIRI DÜZENLEYİN!
-          cp private_repo/tarama_script.py .
+          # Sadece veri dosyasını ana dizine kopyala
+          # EĞER VERİ DOSYANIZIN ADI FARKLIYSA, BU SATIRDAKİ 'Fon_Verileri.csv' YAZISINI DEĞİŞTİRİN!
+          cp private_repo/Fon_Verileri.csv .
 
-      - name: Veri Dosyasını Güncelle
+      - name: Veri Dosyasını Güncelle ve Commit At
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Veri dosyası otomatik olarak güncellendi"
           # Sadece belirtilen dosya değiştiyse commit at
-          file_pattern: "tarama_script.py"
+          # EĞER VERİ DOSYANIZIN ADI FARKLIYSA, BU SATIRDAKİ 'Fon_Verileri.csv' YAZISINI DEĞİŞTİRİN!
+          file_pattern: "Fon_Verileri.csv"
