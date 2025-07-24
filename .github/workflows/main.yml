@@ -2,9 +2,14 @@ name: Zamanlanmış Tarama Scripti
 
 on:
   schedule:
-    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
+    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00) 
     - cron: '0 8 * * 1-5'
   workflow_dispatch:
+
+# --- YENİ EKLENEN BÖLÜM ---
+# Bu bölüm, Action'a depoya dosya yazma (commit) izni verir.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -20,12 +25,12 @@ jobs:
 
       - name: Gereksinimleri Yükle
         run: |
-          python -m pip install --upgrade pip        
+          python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
             pip install ipywidgets jupyter
           else
-            echo "requirements.txt bulunamadı!"      
+            echo "requirements.txt bulunamadı!"
             exit 1
           fi
 
@@ -38,5 +43,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Fon verileri otomatik olarak güncellendi"
-          # Script'in oluşturacağı dosyanın adı bu olmalı
           file_pattern: "Fon_Verileri.csv"
