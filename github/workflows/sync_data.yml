@@ -1,31 +1,46 @@
-name: Veri Senkronizasyonu
+name: Zamanlanmış Tarama Scripti
 
 on:
-  workflow_dispatch: # Manuel çalıştırma için
   schedule:
-    # Her iş günü (Pzt-Cuma) UTC 08:45'te çalışır (Türkiye saati ile 11:45)
-    - cron: '45 8 * * 1-5'
+    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00) 
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:
+
+# --- YENİ EKLENEN BÖLÜM ---
+# Bu bölüm, Action'a depoya dosya yazma (commit) izni verir.
+permissions:
+  contents: write
 
 jobs:
-  sync-data:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: OtoFonWeb Deposunu Kopyala
-        uses: actions/checkout@v3
+      - name: Depoyu Kopyala
+        uses: actions/checkout@v4
 
-      - name: Özel OtoFon Deposundan Veriyi Çek
+      - name: Python 3.10 Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Gereksinimleri Yükle
         run: |
-          # ACCESS_TOKEN sırrını kullanarak özel depoyu klonla
-          git clone https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/HicabiAlptekin/OtoFon.git private_repo
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            pip install ipywidgets jupyter
+          else
+            echo "requirements.txt bulunamadı!"
+            exit 1
+          fi
 
-          # Sadece veri dosyasını ana dizine kopyala
-          # EĞER VERİ DOSYANIZIN ADI FARKLIYSA, BU SATIRDAKİ 'Fon_Verileri.csv' YAZISINI DEĞİŞTİRİN!
-          cp private_repo/Fon_Verileri.csv .
+      - name: Tarama Scriptini Çalıştır
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: python tarama_script.py
 
-      - name: Veri Dosyasını Güncelle ve Commit At
+      - name: Veri Dosyasını Depoya Kaydet
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "Veri dosyası otomatik olarak güncellendi"
-          # Sadece belirtilen dosya değiştiyse commit at
-          # EĞER VERİ DOSYANIZIN ADI FARKLIYSA, BU SATIRDAKİ 'Fon_Verileri.csv' YAZISINI DEĞİŞTİRİN!
+          commit_message: "Fon verileri otomatik olarak güncellendi"
           file_pattern: "Fon_Verileri.csv"
