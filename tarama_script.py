@@ -238,6 +238,13 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
+        # NaN, inf, -inf değerlerini temizle
+        for col in results_df_tekil.columns:
+            if results_df_tekil[col].dtype in ['float64', 'float32']:
+                results_df_tekil[col] = results_df_tekil[col].replace([np.inf, -np.inf], np.nan).apply(lambda x: None if pd.isna(x) else round(x, 4))
+            elif results_df_tekil[col].dtype == 'object':
+                results_df_tekil[col] = results_df_tekil[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+        
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_TEKIL}' dosyasına kaydediliyor...")
@@ -260,7 +267,15 @@ def run_scan_to_gsheets(scan_date: date, gc):
         worksheet_tekil.clear()
 
         if not results_df_tekil.empty:
-            data_to_upload_tekil = [results_df_tekil.columns.values.tolist()] + results_df_tekil.values.tolist()
+            # Google Sheets için veri formatlama
+            df_to_gsheets = results_df_tekil.copy()
+            for col in df_to_gsheets.columns:
+                if df_to_gsheets[col].dtype in ['float64', 'float32']:
+                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) else round(float(x), 4))
+                elif df_to_gsheets[col].dtype == 'object':
+                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+
+            data_to_upload_tekil = [df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist()
             worksheet_tekil.update(values=data_to_upload_tekil, range_name='A1')
             body_resize_tekil = {
                 "requests": [{
@@ -382,6 +397,13 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
     if not results_df.empty:
         results_df = results_df[existing_cols_for_df].sort_values(by='Değerlendirme', ascending=False, na_position='last')
+        # NaN, inf, -inf değerlerini temizle
+        for col in results_df.columns:
+            if results_df[col].dtype in ['float64', 'float32']:
+                results_df[col] = results_df[col].replace([np.inf, -np.inf], np.nan).apply(lambda x: None if pd.isna(x) else round(x, 4))
+            elif results_df[col].dtype == 'object':
+                results_df[col] = results_df[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+        
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_HAFTALIK}' dosyasına kaydediliyor...")
@@ -405,6 +427,13 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
         df_to_gsheets = results_df[[col for col in final_view_columns if col in results_df.columns]]
         if not df_to_gsheets.empty:
+            # Google Sheets için veri formatlama
+            for col in df_to_gsheets.columns:
+                if df_to_gsheets[col].dtype in ['float64', 'float32']:
+                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) else round(float(x), 4))
+                elif df_to_gsheets[col].dtype == 'object':
+                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+
             worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(),
                             value_input_option='USER_ENTERED')
 
