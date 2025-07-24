@@ -1,0 +1,30 @@
+name: Veri Senkronizasyonu
+
+on:
+  workflow_dispatch: # Manuel çalıştırma için
+  schedule:
+    # Her iş günü (Pzt-Cuma) UTC 08:45'te çalışır (Türkiye saati ile 11:45)
+    - cron: '45 8 * * 1-5'
+
+jobs:
+  sync-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: OtoFonWeb Deposunu Kopyala
+        uses: actions/checkout@v3
+
+      - name: Özel OtoFon Deposundan Veriyi Çek
+        run: |
+          # ACCESS_TOKEN sırrını kullanarak özel depoyu klonla
+          git clone https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/HicabiAlptekin/OtoFon.git private_repo
+
+          # Veri dosyasını ana dizine kopyala
+          # EĞER VERİ DOSYANIZIN ADI 'Fon_Verileri.csv' DEĞİLSE, BU SATIRI DÜZENLEYİN!
+          cp private_repo/Fon_Verileri.csv .
+
+      - name: Veri Dosyasını Güncelle
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Veri dosyası otomatik olarak güncellendi"
+          # Sadece belirtilen dosya değiştiyse commit at
+          file_pattern: "Fon_Verileri.csv"
