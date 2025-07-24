@@ -238,15 +238,15 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
-        # CSV için veri temizleme
+        # CSV için veri temizleme ve formatlama
         df_for_csv = results_df_tekil.copy()
         for col in df_for_csv.columns:
             if col == 'Fiyat':
                 df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.6f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
+                    lambda x: f"{x:,.6f}".replace(".", ",") if pd.notna(x) else None)
             elif df_for_csv[col].dtype in ['float64', 'float32']:
                 df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
+                    lambda x: f"{x:,.4f}".replace(".", ",") if pd.notna(x) else None)
             elif df_for_csv[col].dtype == 'object':
                 df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
 
@@ -264,7 +264,7 @@ def run_scan_to_gsheets(scan_date: date, gc):
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
             if df_to_gsheets[col].dtype in ['float64', 'float32']:
-                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(df_to_gsheets[col]), None)
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).where(pd.notna(df_to_gsheets[col]), None)
             elif df_to_gsheets[col].dtype == 'object':
                 df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
 
@@ -413,7 +413,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
         for col in df_for_csv.columns:
             if df_for_csv[col].dtype in ['float64', 'float32']:
                 df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf], np.nan).apply(
-                    lambda x: f"{x:,.4f}".replace(".", ",") if isinstance(x, (int, float)) and pd.notna(x) else None)
+                    lambda x: f"{x:,.4f}".replace(".", ",") if pd.notna(x) else None)
             elif df_for_csv[col].dtype == 'object':
                 df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
 
@@ -431,7 +431,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
         print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
         for col in df_to_gsheets.columns:
             if df_to_gsheets[col].dtype in ['float64', 'float32']:
-                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(df_to_gsheets[col]), None)
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf], np.nan).where(pd.notna(df_to_gsheets[col]), None)
             elif df_to_gsheets[col].dtype == 'object' and col not in ['is_desired_trend', '_DEBUG_IsDesiredTrend', '_DEBUG_WeeklyChanges_RAW']:
                 df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
             if col in ['is_desired_trend', '_DEBUG_IsDesiredTrend']:
