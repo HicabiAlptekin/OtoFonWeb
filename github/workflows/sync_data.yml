@@ -14,17 +14,18 @@ jobs:
 
       - name: Özel OtoFon Deposundan Veriyi Çek
         run: |
-          # ACCESS_TOKEN sırrını kullanarak özel depoyu klonla
+          # Bu komut 'private_repo' adında bir klasör oluşturur
           git clone https://x-access-token:${{ secrets.ACCESS_TOKEN }}@github.com/HicabiAlptekin/OtoFon.git private_repo
 
       - name: Debug - Klonlanan Depodaki Dosyaları Listele
         run: |
           echo "Klonlanan 'private_repo' klasörünün içeriği:"
+          # Sonraki komutların bu klasör adını tam olarak kullanması gerekir
           ls -R private_repo
 
       - name: Veri Dosyasını Kopyala
         run: |
-          # Veri dosyasını ana dizine kopyala
+          # 'private_repo' (hepsi küçük harf) klasöründen kopyala
           cp private_repo/Fon_Verileri.csv .
 
       - name: Veri Dosyasını Güncelle ve Commit At
