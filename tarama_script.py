@@ -238,23 +238,38 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil].sort_values(by='YB %', ascending=False, na_position='last')
-        # NaN, inf, -inf değerlerini temizle
-        for col in results_df_tekil.columns:
-            if results_df_tekil[col].dtype in ['float64', 'float32']:
-                results_df_tekil[col] = results_df_tekil[col].replace([np.inf, -np.inf], np.nan).apply(lambda x: None if pd.isna(x) else round(x, 4))
-            elif results_df_tekil[col].dtype == 'object':
-                results_df_tekil[col] = results_df_tekil[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+        # CSV için veri temizleme
+        df_for_csv = results_df_tekil.copy()
+        for col in df_for_csv.columns:
+            if df_for_csv[col].dtype in ['float64', 'float32']:
+                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf, np.nan], None).apply(lambda x: round(x, 4) if isinstance(x, (int, float)) else x)
+            elif df_for_csv[col].dtype == 'object':
+                df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
         
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_TEKIL}' dosyasına kaydediliyor...")
-            results_df_tekil.to_csv(OUTPUT_CSV_FILENAME_TEKIL, index=False, encoding='utf-8-sig')
+            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_TEKIL, index=False, encoding='utf-8-sig')
             print(f"✅ Veriler başarıyla '{OUTPUT_CSV_FILENAME_TEKIL}' dosyasına kaydedildi.")
         except Exception as e:
             print(f"❌ CSV dosyasına yazma hatası (Tekil): {e}")
             traceback.print_exc()
+
+        # Google Sheets için veri temizleme ve hata ayıklama
+        df_to_gsheets = results_df_tekil.copy()
+        print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
+        for col in df_to_gsheets.columns:
+            if df_to_gsheets[col].dtype in ['float64', 'float32']:
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf, np.nan], None).apply(lambda x: str(round(x, 4)) if isinstance(x, (int, float)) else None)
+            elif df_to_gsheets[col].dtype == 'object':
+                df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else str(x))
+        
+        # Veri örneğini logla
+        print(f"İlk 5 satır (Google Sheets'e yazılacak):")
+        print(df_to_gsheets.head().to_string())
     else:
-        print("ℹ️ CSV'ye yazılacak veri bulunmuyor (Tekil Tarama).")
+        print("ℹ️ CSV'ye veya Google Sheets'e yazılacak veri bulunmuyor (Tekil Tarama).")
+        return
 
     try:
         print(f"\n🔄 Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_MANUAL}' sayfasına yazılıyor...")
@@ -266,17 +281,9 @@ def run_scan_to_gsheets(scan_date: date, gc):
             worksheet_tekil = spreadsheet.add_worksheet(title=WORKSHEET_NAME_MANUAL, rows="1000", cols=max(100, len(existing_cols_tekil) + 5))
         worksheet_tekil.clear()
 
-        if not results_df_tekil.empty:
-            # Google Sheets için veri formatlama
-            df_to_gsheets = results_df_tekil.copy()
-            for col in df_to_gsheets.columns:
-                if df_to_gsheets[col].dtype in ['float64', 'float32']:
-                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) else round(float(x), 4))
-                elif df_to_gsheets[col].dtype == 'object':
-                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
-
+        if not df_to_gsheets.empty:
             data_to_upload_tekil = [df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist()
-            worksheet_tekil.update(values=data_to_upload_tekil, range_name='A1')
+            worksheet_tekil.update(values=data_to_upload_tekil, range_name='A1', value_input_option='USER_ENTERED')
             body_resize_tekil = {
                 "requests": [{
                     "autoResizeDimensions": {
@@ -397,23 +404,38 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
     if not results_df.empty:
         results_df = results_df[existing_cols_for_df].sort_values(by='Değerlendirme', ascending=False, na_position='last')
-        # NaN, inf, -inf değerlerini temizle
-        for col in results_df.columns:
-            if results_df[col].dtype in ['float64', 'float32']:
-                results_df[col] = results_df[col].replace([np.inf, -np.inf], np.nan).apply(lambda x: None if pd.isna(x) else round(x, 4))
-            elif results_df[col].dtype == 'object':
-                results_df[col] = results_df[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
+        # CSV için veri temizleme
+        df_for_csv = results_df.copy()
+        for col in df_for_csv.columns:
+            if df_for_csv[col].dtype in ['float64', 'float32']:
+                df_for_csv[col] = df_for_csv[col].replace([np.inf, -np.inf, np.nan], None).apply(lambda x: round(x, 4) if isinstance(x, (int, float)) else x)
+            elif df_for_csv[col].dtype == 'object':
+                df_for_csv[col] = df_for_csv[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else x)
         
         # CSV dosyasına kaydet
         try:
             print(f"\nSonuçlar '{OUTPUT_CSV_FILENAME_HAFTALIK}' dosyasına kaydediliyor...")
-            results_df.to_csv(OUTPUT_CSV_FILENAME_HAFTALIK, index=False, encoding='utf-8-sig')
+            df_for_csv.to_csv(OUTPUT_CSV_FILENAME_HAFTALIK, index=False, encoding='utf-8-sig')
             print(f"✅ Veriler başarıyla '{OUTPUT_CSV_FILENAME_HAFTALIK}' dosyasına kaydedildi.")
         except Exception as e:
             print(f"❌ CSV dosyasına yazma hatası (Haftalık): {e}")
             traceback.print_exc()
+
+        # Google Sheets için veri temizleme ve hata ayıklama
+        df_to_gsheets = results_df.copy()
+        print("\n🔍 Google Sheets'e yazmadan önce veri kontrol ediliyor...")
+        for col in df_to_gsheets.columns:
+            if df_to_gsheets[col].dtype in ['float64', 'float32']:
+                df_to_gsheets[col] = df_to_gsheets[col].replace([np.inf, -np.inf, np.nan], None).apply(lambda x: str(round(x, 4)) if isinstance(x, (int, float)) else None)
+            elif df_to_gsheets[col].dtype == 'object':
+                df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) or (isinstance(x, str) and x.lower() in ['nan', 'nat']) else str(x))
+        
+        # Veri örneğini logla
+        print(f"İlk 5 satır (Google Sheets'e yazılacak):")
+        print(df_to_gsheets.head().to_string())
     else:
-        print("ℹ️ CSV'ye yazılacak veri bulunmuyor (Haftalık Tarama).")
+        print("ℹ️ CSV'ye veya Google Sheets'e yazılacak veri bulunmuyor (Haftalık Tarama).")
+        return
 
     try:
         print(f"\n🔄 Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_WEEKLY}' sayfasına yazılıyor...")
@@ -425,15 +447,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
             worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_WEEKLY, rows="1000", cols=max(100, len(final_view_columns) + 5))
         worksheet.clear()
 
-        df_to_gsheets = results_df[[col for col in final_view_columns if col in results_df.columns]]
         if not df_to_gsheets.empty:
-            # Google Sheets için veri formatlama
-            for col in df_to_gsheets.columns:
-                if df_to_gsheets[col].dtype in ['float64', 'float32']:
-                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if pd.isna(x) else round(float(x), 4))
-                elif df_to_gsheets[col].dtype == 'object':
-                    df_to_gsheets[col] = df_to_gsheets[col].apply(lambda x: None if (isinstance(x, str) and x.lower() in ['nan', 'nat']) or pd.isna(x) else x)
-
             worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(),
                             value_input_option='USER_ENTERED')
 
