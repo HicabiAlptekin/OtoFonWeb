@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otomatik Fon Verileri</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 1em 2em;
+            background-color: #f4f6f8;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 2em;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        #lastUpdate {
+            font-style: italic;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Filtrelenebilir Fon Verileri</h1>
+    <p>Bu tablo her iş günü saat 11:45 civarında otomatik olarak güncellenmektedir. Sütun başlıklarına tıklayarak sıralama yapabilir veya arama kutusunu kullanarak filtreleyebilirsiniz.</p>
+    <p id="lastUpdate"></p>
+    <hr>
+    <table id="veriTablosu" class="display" style="width:100%">
+        <thead>
+            <!-- Başlıklar JavaScript tarafından dinamik olarak eklenecek -->
+        </thead>
+    </table>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    // OtoFon projenizin ürettiği veri dosyasının adı. Eğer farklıysa, burayı değiştirin.
+    const dataFile = 'Fon_Verileri.csv';
+
+    Papa.parse(dataFile, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            if (results.data && results.data.length > 0) {
+                const data = results.data;
+                const headers = results.meta.fields;
+
+                let headerHtml = '<tr>';
+                headers.forEach(header => {
+                    headerHtml += `<th>${header}</th>`;
+                });
+                headerHtml += '</tr>';
+                $('#veriTablosu thead').html(headerHtml);
+
+                $('#veriTablosu').DataTable({
+                    data: data,
+                    columns: headers.map(header => ({ data: header })),
+                    language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/tr.json' }
+                });
+            } else {
+                $('.container').append('<p>Veri dosyası bulunamadı veya boş. Lütfen yöneticinizle iletişime geçin.</p>');
+            }
+        },
+        error: function(error) {
+            console.error("Veri dosyası yüklenemedi:", error);
+            $('.container').append('<p>Veri dosyası yüklenemedi. Lütfen yöneticinizle iletişime geçin.</p>');
+        }
+    });
+});
+</script>
+
+</body>
+</html>
