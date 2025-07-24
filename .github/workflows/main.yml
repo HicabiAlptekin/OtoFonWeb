@@ -20,12 +20,12 @@ jobs:
 
       - name: Gereksinimleri Yükle
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip        
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
             pip install ipywidgets jupyter
           else
-            echo "requirements.txt bulunamadı!"
+            echo "requirements.txt bulunamadı!"      
             exit 1
           fi
 
@@ -33,3 +33,10 @@ jobs:
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
         run: python tarama_script.py
+
+      - name: Veri Dosyasını Depoya Kaydet
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Fon verileri otomatik olarak güncellendi"
+          # Script'in oluşturacağı dosyanın adı bu olmalı
+          file_pattern: "Fon_Verileri.csv"
