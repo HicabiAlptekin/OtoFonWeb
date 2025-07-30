@@ -28,16 +28,16 @@ jobs:
         pip install pandas numpy gspread pytz python-dateutil tefas tqdm openpyxl
 
     - name: İlk Veri Taramasını Çalıştır
-      id: initial_scan # Bu adıma bir id veriyoruz
+      id: startup_scan # Bu adıma bir id veriyoruz - BURASI DOĞRU
       run: python your_scan_script.py # Kendi Python betiğinizin adı
       env:
         # Python betiğinizin çıktılarını yakalamak için gerekli
         # 'needs_retry' çıktısı buradan okunacak
-        GITHUB_OUTPUT: ${{ steps.initial_scan.outputs }}
+        GITHUB_OUTPUT: ${{ steps.startup_scan.outputs }} # HATA BURADAYDI, DÜZELTİLDİ
 
     - name: Boş Veri Kontrolü ve Yeniden Çalıştırma (Gerekliyse)
-      # Sadece önceki adımın 'needs_retry' çıktısı 'true' ise çalışır
-      if: steps.initial_scan.outputs.needs_retry == 'true'
+      # Sadece önceki adımın 'needs_retry' çıktısı 'true' ise çalışıyor
+      if: steps.startup_scan.outputs.needs_retry == 'true' # HATA BURADAYDI, DÜZELTİLDİ
       run: |
         echo "5 veya daha fazla boş fiyat verisi tespit edildi. 25 dakika bekleyip tekrar denenecek."
         sleep 1500 # 25 dakika * 60 saniye = 1500 saniye
