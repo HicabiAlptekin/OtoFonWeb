@@ -1,12 +1,10 @@
-tefas-crawler
-gspread
-google-auth-oauthlib
-google-auth-httplib2
 pandas
-python-dateutil
-pytz
 numpy
+gspread
+pytz
+python-dateutil
+tefas
 tqdm
 openpyxl
-jupyter
-ipywidgets
+selenium # Bu da tefas kütüphanesi için genellikle gereklidir.
+webdriver-manager
