@@ -9,7 +9,8 @@ import gspread
 import pytz
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
-from tefas import Crawler
+from tefas.program import get_data as tefas_get_data # <-- BURASI DEĞİŞTİRİLDİ
+# from tefas import Crawler # Bu satır artık kullanılmıyor
 # from google.colab import auth # Colab'a özel olduğu için kaldırıldı
 from tqdm import tqdm
 import concurrent.futures
@@ -21,7 +22,7 @@ import sys # Script'i hata ile sonlandırmak için eklendi
 # --- Sabitler ---
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
 F_COLS = ["date", "price"]
-SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
+SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14' # Kendi Google Sheet ID'niz
 WORKSHEET_NAME_MANUAL = 'veriler'
 WORKSHEET_NAME_WEEKLY = 'haftalık'
 TIMEZONE = pytz.timezone('Europe/Istanbul')
@@ -46,14 +47,21 @@ def google_sheets_auth_github():
         traceback.print_exc()
         sys.exit(1) # Kritik hata, script'i sonlandır
 
-# --- TEFAS Crawler Başlatma ---
+# --- TEFAS İstemcisi Başlatma (DEĞİŞTİRİLDİ) ---
+# Artık tefas.program.get_data fonksiyonunu doğrudan kullanacağız.
+# Genel bir "crawler" nesnesi oluşturmaya gerek kalmadı.
+# Bu blok, artık sadece bir bilgi mesajı ve olası bir hata yakalama görevi görür.
 try:
-    tefas_crawler_global = Crawler()
-    print("TEFAS Crawler başarıyla başlatıldı.")
+    # tefas_crawler_global = Crawler() # Bu satır silindi
+    print("TEFAS veri çekme fonksiyonu başarıyla yüklendi.")
 except Exception as e:
-    print(f"TEFAS Crawler başlatılırken hata: {e}")
+    print(f"TEFAS veri çekme fonksiyonu yüklenirken hata: {e}")
     traceback.print_exc()
-    tefas_crawler_global = None # Hata durumunda None olarak bırak
+    # Hata durumunda sys.exit(1) yapmamıza gerek yok,
+    # çünkü get_data çağrısı sırasında da hata yakalanabilir.
+    # Ancak yine de genel bir sorun varsa script'i durdurmak mantıklı olabilir.
+    sys.exit(1) # Kritik bir hata, script'i sonlandır
+
 
 # --- Yardımcı Fonksiyonlar (Değişiklik Yok) ---
 def load_takasbank_fund_list():
@@ -102,10 +110,11 @@ def calculate_change(current_price, past_price):
         return ((current_price_float - past_price_float) / past_price_float) * 100
     except (ValueError, TypeError): return np.nan
 
+# --- TEFAS Verisi Çekme Fonksiyonu (DEĞİŞTİRİLDİ) ---
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall, chunk_days, max_retries, retry_delay = args
-    global tefas_crawler_global
-    if tefas_crawler_global is None: return fon_kodu, pd.DataFrame()
+    # global tefas_crawler_global # Bu satır artık gerekmiyor
+    # if tefas_crawler_global is None: return fon_kodu, pd.DataFrame() # Bu kontrol artık gerekmiyor
 
     all_fon_data = pd.DataFrame()
     current_start_date_chunk = start_date_overall
@@ -117,7 +126,7 @@ def fetch_data_for_fund_parallel(args):
         while retries < max_retries and not success:
             try:
                 if current_start_date_chunk <= current_end_date_chunk:
-                    chunk_data_fetched = tefas_crawler_global.fetch(
+                    chunk_data_fetched = tefas_get_data( # <-- tefas_crawler_global.fetch yerine tefas_get_data
                         start=current_start_date_chunk.strftime("%Y-%m-%d"),
                         end=current_end_date_chunk.strftime("%Y-%m-%d"),
                         name=fon_kodu,
@@ -298,9 +307,9 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                 print("ℹ️ İstenen trende (H1>H2>...) uyan hiçbir fon bulunamadı.")
 
             body_resize = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet.id,
-                                                                              "dimension": "COLUMNS",
-                                                                              "startIndex": 0,
-                                                                              "endIndex": len(df_to_gsheets.columns)}}}]}
+                                                                               "dimension": "COLUMNS",
+                                                                               "startIndex": 0,
+                                                                               "endIndex": len(df_to_gsheets.columns)}}}]}
             spreadsheet.batch_update(body_resize)
         else:
             print("ℹ️ Google Sheets'e yazılacak veri bulunmuyor.")
@@ -342,8 +351,8 @@ def run_scan_to_gsheets(scan_date: date, gc):
             try:
                 _, fund_history = future.result()
                 fiyat_son, degisimler = np.nan, {p: np.nan for p in ['Günlük %', 'Haftalık %', '2 Haftalık %',
-                                                                      'Aylık %', '3 Aylık %', '6 Aylık %',
-                                                                      '1 Yıllık %', 'YB %']}
+                                                                     'Aylık %', '3 Aylık %', '6 Aylık %',
+                                                                     '1 Yıllık %', 'YB %']}
 
                 if fund_history is not None and not fund_history.empty:
                     fiyat_son = get_price_on_or_before(fund_history, scan_date)
