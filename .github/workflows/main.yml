@@ -1,35 +1,45 @@
-name: Zamanlanmış Tarama Scripti
+name: Günlük Fon Taraması ve Kontrol
 
 on:
   schedule:
-    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
-    - cron: '0 8 * * 1-5'
+    # Türkiye saati ile 10:45 (UTC 07:45)
+    # Cronin "minute hour day_of_month month day_of_week" formatındadır.
+    # Bursa, Türkiye UTC+3 olduğundan, 10:45 TRT için 07:45 UTC'dir.
+    - cron: '45 7 * * 1-5' # Pazartesi-Cuma
+
+  # Manuel olarak çalıştırma yeteneği
   workflow_dispatch:
 
 jobs:
-  build:
+  tarama:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Depoyu Kopyala
-        uses: actions/checkout@v4
+    - name: Kodu Çek
+      uses: actions/checkout@v4
 
-      - name: Python 3.10 Kurulumu
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Python Ortamını Kur
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
-      - name: Gereksinimleri Yükle
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-            pip install ipywidgets jupyter
-          else
-            echo "requirements.txt bulunamadı!"
-            exit 1
-          fi
+    - name: Bağımlılıkları Yükle
+      run: |
+        pip install pandas numpy gspread pytz python-dateutil tefas tqdm openpyxl
 
-      - name: Tarama Scriptini Çalıştır
-        env:
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: python tarama_script.py
+    - name: İlk Veri Taramasını Çalıştır
+      id: initial_scan # Bu adıma bir id veriyoruz
+      run: python your_scan_script.py # Kendi Python betiğinizin adı
+      env:
+        # Python betiğinizin çıktılarını yakalamak için gerekli
+        # 'needs_retry' çıktısı buradan okunacak
+        GITHUB_OUTPUT: ${{ steps.initial_scan.outputs }}
+
+    - name: Boş Veri Kontrolü ve Yeniden Çalıştırma (Gerekliyse)
+      # Sadece önceki adımın 'needs_retry' çıktısı 'true' ise çalışır
+      if: steps.initial_scan.outputs.needs_retry == 'true'
+      run: |
+        echo "5 veya daha fazla boş fiyat verisi tespit edildi. 25 dakika bekleyip tekrar denenecek."
+        sleep 1500 # 25 dakika * 60 saniye = 1500 saniye
+        echo "Yeniden tarama başlatılıyor..."
+        python your_scan_script.py # Tarama betiğini tekrar çalıştır
