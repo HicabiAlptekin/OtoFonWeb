@@ -117,31 +117,6 @@ def fetch_data_for_fund_parallel(args):
 
     return fon_kodu, all_fon_data
 
-def apply_cell_format_request(worksheet_id, row_index, num_columns, is_highlight):
-    if is_highlight:
-        text_format = {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}
-    else:
-        text_format = {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}
-
-    return {
-        "repeatCell": {
-            "range": {
-                "sheetId": worksheet_id,
-                "startRowIndex": row_index,
-                "endRowIndex": row_index + 1,
-                "startColumnIndex": 0,
-                "endColumnIndex": num_columns
-            },
-            "cell": {"userEnteredFormat": {"textFormat": text_format}},
-            "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
-        }
-    }
-
-# --- HAFTALIK TARAMA FONKSİYONU ---
-def run_weekly_scan_to_gsheets(num_weeks: int, gc):
-    # ... (Bu fonksiyonun içeriği aynı, şimdilik odaklanmıyoruz) ...
-    pass # Şimdilik bu fonksiyonu atlayalım
-
 # --- TEKİL TARİH TARAMA FONKSİYONU ---
 def run_single_date_scan_to_gsheets(scan_date: date, gc):
     start_time_main = time.time()
@@ -154,8 +129,9 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Bitiş Tarihi: {scan_date.strftime('%d.%m.%Y')} ---")
 
     total_fon_count = len(all_fon_data_df)
-    genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, months=1, days=15)
-    fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, scan_date, 30, 3, 5)
+    # Veri çekme aralığını biraz daha geniş tutalım
+    genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, months=2)
+    fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, scan_date, 90, 3, 5)
                     for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
 
     MAX_WORKERS = 10
@@ -172,8 +148,6 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
             try:
                 _, fund_history = future.result()
                 if fund_history.empty:
-                    # DEBUG: Boş veri gelen fonları görelim
-                    # print(f"DEBUG: {fon_kodu_completed} için TEFAS'tan veri gelmedi.")
                     continue
 
                 fiyat_son = get_price_on_or_before(fund_history, scan_date)
@@ -183,16 +157,26 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
                     'Günlük %': timedelta(days=1), 'Haftalık %': timedelta(weeks=1),
                     '2 Haftalık %': timedelta(weeks=2), 'Aylık %': relativedelta(months=1),
                     '3 Aylık %': relativedelta(months=3), '6 Aylık %': relativedelta(months=6),
-                    '1 Yıllık %': relativedelta(years=1), 'YB %': relativedelta(years=scan_date.year, months=1, days=1)
+                    '1 Yıllık %': relativedelta(years=1)
                 }
                 
                 if not pd.isna(fiyat_son):
                     for name, period_delta in periods.items():
                         target_date = scan_date - period_delta
-                        if name == 'YB %': target_date = date(scan_date.year - 1, 12, 31)
-                        
                         fiyat_onceki = get_price_on_or_before(fund_history, target_date)
                         degisimler[name] = calculate_change(fiyat_son, fiyat_onceki)
+                    
+                    # --- DÜZELTİLMİŞ YB% HESAPLAMASI ---
+                    try:
+                        # scan_date'in geçerli bir yıl olduğundan emin ol
+                        if scan_date and scan_date.year > 1:
+                            yb_target_date = date(scan_date.year - 1, 12, 31)
+                            fiyat_onceki_yb = get_price_on_or_before(fund_history, yb_target_date)
+                            degisimler['YB %'] = calculate_change(fiyat_son, fiyat_onceki_yb)
+                        else:
+                            degisimler['YB %'] = np.nan
+                    except Exception:
+                        degisimler['YB %'] = np.nan
                 
                 fon_adi = all_fon_data_df.loc[all_fon_data_df['Fon Kodu'] == fon_kodu_completed, 'Fon Adı'].iloc[0]
                 result_row = {'Fon Kodu': fon_kodu_completed, 'Fon Adı': fon_adi,
@@ -200,26 +184,20 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
                 result_row.update(degisimler)
                 all_results.append(result_row)
             except Exception as exc:
-                print(f"Hata (Tekil - {fon_kodu_completed}): {exc}")
+                print(f"Hata (Ana Döngü - {fon_kodu_completed}): {exc}")
+                traceback.print_exc()
 
     print(f"\n✅ Tekil tarama tamamlandı. {len(all_results)} fon için sonuç hesaplandı.")
     
     results_df_tekil = pd.DataFrame(all_results)
     column_order = ['Fon Kodu', 'Fon Adı', 'Bitiş Tarihi', 'Fiyat', 'Günlük %', 'Haftalık %',
                    '2 Haftalık %', 'Aylık %', '3 Aylık %', '6 Aylık %', '1 Yıllık %', 'YB %']
+    
+    # Oluşturulan tüm sütunları al ve sırala
     existing_cols_tekil = [col for col in column_order if col in results_df_tekil.columns]
-
+    
     if not results_df_tekil.empty:
         results_df_tekil = results_df_tekil[existing_cols_tekil]
-    
-    # --- DEBUG SATIRLARI ---
-    print("\n--- DEBUG: Google Sheets'e Yazmadan Önceki Son Veri ---")
-    print(f"Yazılacak Toplam Satır Sayısı: {len(results_df_tekil)}")
-    if not results_df_tekil.empty:
-        print("İlk 5 Satır:")
-        print(results_df_tekil.head().to_string())
-    print("--- DEBUG BİTİŞ ---\n")
-    # --- DEBUG SATIRLARI SONU ---
 
     print(f"Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_MANUAL}' sayfasına yazılıyor...")
     try:
@@ -233,9 +211,9 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
         worksheet_tekil.clear()
 
         if not results_df_tekil.empty:
-            # Sütunları sırala
-            results_df_tekil.sort_values(by='YB %', ascending=False, na_position='last', inplace=True)
-            # Gerekli formatlamaları yap
+            if 'YB %' in results_df_tekil.columns:
+                results_df_tekil.sort_values(by='YB %', ascending=False, na_position='last', inplace=True)
+            
             for col in results_df_tekil.columns:
                 if results_df_tekil[col].dtype == 'float64':
                     results_df_tekil[col] = results_df_tekil[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(results_df_tekil[col]), None)
@@ -256,7 +234,6 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
         traceback.print_exc()
         return pd.DataFrame()
 
-
 # --- ANA ÇALIŞTIRMA BLOĞU ---
 if __name__ == "__main__":
     print("Otomatik Tarama Script'i Başlatıldı.")
@@ -272,7 +249,18 @@ if __name__ == "__main__":
     print("="*40)
     results_df = run_single_date_scan_to_gsheets(scan_date_input, gc_auth)
 
-    # Yeniden deneme mantığı şimdilik devre dışı, önce ana sorunu çözelim.
-    # Haftalık tarama da devre dışı.
+    if results_df is not None and not results_df.empty:
+        empty_price_count = results_df['Fiyat'].isnull().sum()
+        print(f"\nTarama sonrası kontrol: {empty_price_count} adet fonun fiyat verisi boş.")
+
+        if empty_price_count >= 5:
+            print(f"⚠️ 5 veya daha fazla fonun fiyat verisi boş. 20 dakika sonra yeniden denenecek...")
+            time.sleep(1200)
+            print("\n=== TEKİL TARAMA YENİDEN BAŞLIYOR (Otomatik Yeniden Deneme) ===")
+            run_single_date_scan_to_gsheets(scan_date_input, gc_auth)
+        else:
+            print("✅ Fiyat verisi boş olan fon sayısı eşiğin altında. Yeniden denemeye gerek yok.")
+    else:
+        print("⚠️ Tarama sonucu boş veya hatalı. Yeniden deneme mekanizması atlanıyor.")
     
     print("\n--- Tüm işlemler tamamlandı ---")
