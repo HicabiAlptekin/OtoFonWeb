@@ -1,33 +1,35 @@
-name: Python Tarama Script
+name: Zamanlanmış Tarama Scripti
 
 on:
   schedule:
-    - cron: '45 7 * * 1-5'
+    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
+    - cron: '0 8 * * 1-5'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
+      - name: Depoyu Kopyala
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: 'pip'
+      - name: Python 3.10 Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    - name: pip'i güncelle
-      run: python -m pip install --upgrade pip
+      - name: Gereksinimleri Yükle
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            pip install ipywidgets jupyter
+          else
+            echo "requirements.txt bulunamadı!"
+            exit 1
+          fi
 
-    - name: Bağımlılıkları yükle
-      run: python -m pip install -r requirements.txt
-
-    - name: Yüklü paketleri listele (debug için)
-      run: pip list
-
-    - name: Scripti çalıştır
-      env:
-        GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-      run: python tarama_script.py
+      - name: Tarama Scriptini Çalıştır
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: python tarama_script.py
