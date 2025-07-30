@@ -10,5 +10,5 @@ openpyxl
 selenium==4.22.0
 webdriver-manager==4.0.1
 tefas==0.0.10
-# jupyter               # GitHub Actions ortamında genellikle gerekmez, yerel için tutulabilir
-# ipywidgets            # GitHub Actions ortamında genellikle gerekmez, yerel için tutulabilir
+# jupyter               # Yerel kullanım için tutulabilir, GitHub Actions'ta gerekmez
+# ipywidgets            # Yerel kullanım için tutulabilir, GitHub Actions'ta gerekmez
