@@ -21,7 +21,7 @@ import sys # Script'i hata ile sonlandırmak için eklendi
 # --- Sabitler ---
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
 F_COLS = ["date", "price"]
-SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14' # Lütfen KENDİ Google Sheet ID'niz ile güncelleyin
+SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
 WORKSHEET_NAME_MANUAL = 'veriler'
 WORKSHEET_NAME_WEEKLY = 'haftalık'
 TIMEZONE = pytz.timezone('Europe/Istanbul')
@@ -187,8 +187,8 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, args): args[0] for args in fon_args_list}
         progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon),
-                             total=total_fon_count,
-                             desc="🔎 Fonlar Taranıyor (Haftalık)")
+                              total=total_fon_count,
+                              desc="🔎 Fonlar Taranıyor (Haftalık)")
 
         for future in progress_bar:
             fon_kodu_completed = future_to_fon[future]
@@ -245,8 +245,8 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     if not first_fund_calculated_columns and not results_df.empty:
         temp_row_cols = [col for col in results_df.columns
                          if col not in ['Fon Kodu', 'Fon Adı', 'Değerlendirme',
-                                        'is_desired_trend', '_DEBUG_WeeklyChanges_RAW',
-                                        '_DEBUG_IsDesiredTrend']]
+                                         'is_desired_trend', '_DEBUG_WeeklyChanges_RAW',
+                                         '_DEBUG_IsDesiredTrend']]
         first_fund_calculated_columns = temp_row_cols if temp_row_cols else []
 
     base_cols = ['Fon Kodu', 'Fon Adı']
@@ -298,9 +298,9 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                 print("ℹ️ İstenen trende (H1>H2>...) uyan hiçbir fon bulunamadı.")
 
             body_resize = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet.id,
-                                                                                 "dimension": "COLUMNS",
-                                                                                 "startIndex": 0,
-                                                                                 "endIndex": len(df_to_gsheets.columns)}}}]}
+                                                                              "dimension": "COLUMNS",
+                                                                              "startIndex": 0,
+                                                                              "endIndex": len(df_to_gsheets.columns)}}}]}
             spreadsheet.batch_update(body_resize)
         else:
             print("ℹ️ Google Sheets'e yazılacak veri bulunmuyor.")
@@ -322,7 +322,7 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
     if all_fon_data_df.empty:
         print("❌ Taranacak fon listesi alınamadı.")
-        return False # Tarama yapılamadı, retry gerekmez
+        return
 
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Referans Tarih: {scan_date.strftime('%d.%m.%Y')} ---")
 
@@ -334,16 +334,16 @@ def run_scan_to_gsheets(scan_date: date, gc):
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, args): args[0] for args in fon_args_list}
         progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon),
-                             total=len(fon_args_list),
-                             desc="🔎 Fonlar Taranıyor (Tekil)")
+                              total=len(fon_args_list),
+                              desc="🔎 Fonlar Taranıyor (Tekil)")
 
         for future in progress_bar:
             fon_kodu_completed = future_to_fon[future]
             try:
                 _, fund_history = future.result()
                 fiyat_son, degisimler = np.nan, {p: np.nan for p in ['Günlük %', 'Haftalık %', '2 Haftalık %',
-                                                                    'Aylık %', '3 Aylık %', '6 Aylık %',
-                                                                    '1 Yıllık %', 'YB %']}
+                                                                      'Aylık %', '3 Aylık %', '6 Aylık %',
+                                                                      '1 Yıllık %', 'YB %']}
 
                 if fund_history is not None and not fund_history.empty:
                     fiyat_son = get_price_on_or_before(fund_history, scan_date)
@@ -401,10 +401,6 @@ def run_scan_to_gsheets(scan_date: date, gc):
     else:
         results_df_tekil = pd.DataFrame(columns=existing_cols_tekil)
 
-    # Boş veri kontrolü
-    nan_count = results_df_tekil['Fiyat'].isna().sum()
-    print(f"📝 'Fiyat' sütununda tespit edilen boş veri sayısı: {nan_count}")
-
     for col in results_df_tekil.columns:
         if results_df_tekil[col].dtype == 'float64':
             results_df_tekil[col] = results_df_tekil[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(results_df_tekil[col]), None)
@@ -444,35 +440,13 @@ def run_scan_to_gsheets(scan_date: date, gc):
               f"\n🎉 TEKİL TARAMA BAŞARIYLA TAMAMLANDI! ({datetime.now(TIMEZONE).strftime('%d.%m.%Y %H:%M:%S')})\n" +
               f"⏱️ Toplam süre: {((end_time_main_tekil - start_time_main) / 60):.2f} dakika\n" +
               "="*50)
-
-        # GitHub Actions'a çıktı gönderme
-        output_file = os.getenv('GITHUB_OUTPUT')
-        if output_file:
-            with open(output_file, 'a') as f:
-                if nan_count >= 5:
-                    f.write(f"needs_retry=true\n")
-                    print("::notice file=your_scan_script.py::Tarama tekrarı gerekiyor (5+ boş veri).")
-                    return True # Yeniden çalıştırma gerekliliğini belirt
-                else:
-                    f.write(f"needs_retry=false\n")
-                    print("::notice file=your_scan_script.py::Tarama tekrarı gerekmiyor.")
-                    return False # Yeniden çalıştırma gerekmez
-        else:
-            # GITHUB_OUTPUT ortam değişkeni yoksa (örneğin yerel çalıştırma)
-            if nan_count >= 5:
-                print("Tarama tekrarı gerekiyor (GITHUB_OUTPUT yok).")
-                return True
-            else:
-                print("Tarama tekrarı gerekmiyor (GITHUB_OUTPUT yok).")
-                return False
-
     except Exception as e:
         print(f"❌ Google Sheets'e yazma sırasında hata (Tekil): {e}")
         traceback.print_exc()
         sys.exit(1) # Hata durumunda script'i sonlandır
 
 # --- Ana Çalışma Bloğu (GitHub Actions için) ---
-def main_scan_workflow():
+if __name__ == "__main__":
     print("\n--- GitHub Actions Otomatik Tarama Başlıyor ---")
     gc_auth = google_sheets_auth_github()
     if not gc_auth:
@@ -483,28 +457,15 @@ def main_scan_workflow():
     today_in_istanbul = datetime.now(TIMEZONE).date()
     print(f"Bugünün tarihi (İstanbul Saati): {today_in_istanbul.strftime('%d.%m.%Y')}")
 
-    # Tekil Tarama: Fiyat verilerinin çekildiği ve kontrol edildiği yer
+    # Manuel Tekil Tarama Seçimi için (Girdi olmadan)
+    # Otomatik tetikleyici için burayı çalıştıracağız, tarihi bugünün tarihi olacak
+    # Siz "manuel tarama seçimi" dediniz ama aslında otomasyon içinde
+    # `interactive_menu`'den 1 veya 4'ü seçmek yerine doğrudan fonksiyonu çağıracağız.
     print("\n=== TEKİL TARAMA BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
-    needs_retry = run_scan_to_gsheets(today_in_istanbul, gc_auth)
+    run_scan_to_gsheets(today_in_istanbul, gc_auth)
 
-    # Haftalık Tarama (Her zaman çalışacak, çünkü boş veri kontrolü tekil taramada yapılıyor)
+    # Haftalık Tarama Seçimi için (2 hafta sabit)
     print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ===")
     run_weekly_scan_to_gsheets(2, gc_auth)
 
     print("\n--- Tüm Otomatik Tarama İşlemleri Tamamlandı ---")
-
-    # `main_scan_workflow` fonksiyonu, GitHub Actions'a bir çıktı göndermelidir.
-    # Bu çıktı, boş veri kontrolünün sonucunu yansıtır.
-    # Ancak, Python'daki `sys.exit` veya direkt çıktı mekanizması GitHub Actions'ta
-    # bir adımın `output`'unu ayarlamanın en iyi yolu değildir.
-    # En iyi yol, `run_scan_to_gsheets` fonksiyonunun `GITHUB_OUTPUT` kullanarak çıktı yazmasıdır.
-    # Bu nedenle, `main_scan_workflow`'un dönüş değeri doğrudan kullanılmaz,
-    # bunun yerine `run_scan_to_gsheets` içindeki `GITHUB_OUTPUT` kullanılır.
-    # Yine de, bir değer döndürmesi iyi bir pratik olabilir.
-    return needs_retry
-
-
-if __name__ == "__main__":
-    # Script'i doğrudan çalıştırdığımızda ana iş akışını tetikleriz.
-    # GitHub Actions'ta 'run' komutu bu bölümü çalıştıracak.
-    main_scan_workflow()
