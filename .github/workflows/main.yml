@@ -2,38 +2,28 @@ name: Python Tarama Script
 
 on:
   schedule:
-    # Türkiye saatiyle (UTC+3) 10:45'te, Pazartesi-Cuma arası çalışır.
-    # UTC olarak 07:45'e denk gelir.
     - cron: '45 7 * * 1-5'
-  workflow_dispatch: # Manuel olarak çalıştırma imkanı ekler
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Kodu Yükle (Checkout)
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Python 3.10'u Kur
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        # Bağımlılıklar için önbellekleme ekleyerek kurulumu hızlandırır
         cache: 'pip'
-        
-    - name: Bağımlılıkları Yükle
+
+    - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Kurulumu Doğrula # HATA AYIKLAMA İÇİN EKLENDİ
-      # Bu adım, bir önceki adımda hangi kütüphanelerin kurulduğunu listeler.
-      # Hata devam ederse, loglarda bu adıma bakarak tefas-crawler'ın listede olup olmadığını görebiliriz.
-      run: pip list
-      
-    - name: Scripti Çalıştır
+
+    - name: Run script
       env:
-        # GitHub Repository Secrets'ten kimlik anahtarını alır
         GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
       run: python tarama_script.py
