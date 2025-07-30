@@ -117,6 +117,159 @@ def fetch_data_for_fund_parallel(args):
 
     return fon_kodu, all_fon_data
 
+def apply_cell_format_request(worksheet_id, row_index, num_columns, is_highlight):
+    if is_highlight:
+        text_format = {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}
+    else:
+        text_format = {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}
+
+    return {
+        "repeatCell": {
+            "range": {
+                "sheetId": worksheet_id,
+                "startRowIndex": row_index,
+                "endRowIndex": row_index + 1,
+                "startColumnIndex": 0,
+                "endColumnIndex": num_columns
+            },
+            "cell": {"userEnteredFormat": {"textFormat": text_format}},
+            "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
+        }
+    }
+
+# --- HAFTALIK TARAMA FONKSİYONU ---
+def run_weekly_scan_to_gsheets(num_weeks: int, gc):
+    start_time_main = time.time()
+    today = datetime.now(TIMEZONE).date()
+    all_fon_data_df = load_takasbank_fund_list()
+
+    if all_fon_data_df.empty:
+        print("❌ Taranacak fon listesi alınamadı. İşlem durduruldu.")
+        return
+
+    print(f"\n--- HAFTALIK TARAMA BAŞLATILIYOR | {num_weeks} Hafta Geriye Dönük ---")
+
+    total_fon_count = len(all_fon_data_df)
+    genel_veri_cekme_baslangic_tarihi = today - timedelta(days=(num_weeks * 7) + 21)
+    fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, today, 90, 3, 5)
+                      for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
+
+    MAX_WORKERS = 10
+    weekly_results_dict = {}
+    first_fund_calculated_columns = []
+    first_fund_processed = False
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_fon = {executor.submit(fetch_data_for_fund_parallel, args): args[0] for args in fon_args_list}
+        progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon),
+                              total=total_fon_count,
+                              desc=" Fonlar Taranıyor (Haftalık)")
+
+        for future in progress_bar:
+            fon_kodu_completed = future_to_fon[future]
+            try:
+                _, fund_history = future.result()
+                fon_adi = all_fon_data_df.loc[all_fon_data_df['Fon Kodu'] == fon_kodu_completed, 'Fon Adı'].iloc[0]
+                
+                current_fon_data = {'Fon Kodu': fon_kodu_completed, 'Fon Adı': fon_adi}
+                calculated_cols_current_fund, weekly_changes_list = [], []
+                first_week_end_price, last_week_start_price = np.nan, np.nan
+                current_week_end_date_cal = today
+
+                for i in range(num_weeks):
+                    current_week_start_date_cal = current_week_end_date_cal - timedelta(days=7)
+                    price_end = get_price_on_or_before(fund_history, current_week_end_date_cal)
+                    price_start = get_price_on_or_before(fund_history, current_week_start_date_cal)
+
+                    if i == 0: first_week_end_price = price_end
+                    if i == num_weeks - 1: last_week_start_price = price_start
+
+                    col_name = f"{current_week_end_date_cal.day:02d}-{current_week_start_date_cal.day:02d}/{current_week_end_date_cal.year % 100:02d}"
+                    weekly_change = calculate_change(price_end, price_start)
+                    current_fon_data[col_name] = weekly_change
+                    weekly_changes_list.append(weekly_change)
+                    calculated_cols_current_fund.append(col_name)
+                    current_week_end_date_cal = current_week_start_date_cal
+
+                if not first_fund_processed and calculated_cols_current_fund:
+                    first_fund_calculated_columns = calculated_cols_current_fund
+                    first_fund_processed = True
+
+                current_fon_data['Değerlendirme'] = calculate_change(first_week_end_price, last_week_start_price)
+                is_desired_trend = False
+                valid_changes = [chg for chg in weekly_changes_list if not pd.isna(chg)]
+
+                if len(valid_changes) == num_weeks and num_weeks >= 2:
+                    if all(valid_changes[j] > valid_changes[j+1] for j in range(num_weeks - 1)):
+                        is_desired_trend = True
+                
+                # --- DEBUG SÜTUNLARI GERİ EKLENDİ ---
+                current_fon_data['is_desired_trend'] = bool(is_desired_trend)
+                current_fon_data['_DEBUG_WeeklyChanges_RAW'] = "'" + str([f"{x:.2f}" if not pd.isna(x) else "NaN" for x in weekly_changes_list])
+                current_fon_data['_DEBUG_IsDesiredTrend'] = bool(is_desired_trend)
+                weekly_results_dict[fon_kodu_completed] = current_fon_data
+            except Exception as exc:
+                print(f"Hata (Haftalık - {fon_kodu_completed}): {exc}")
+
+    results_df = pd.DataFrame(list(weekly_results_dict.values()))
+
+    if not first_fund_calculated_columns and not results_df.empty:
+        temp_row_cols = [col for col in results_df.columns if col not in ['Fon Kodu', 'Fon Adı', 'Değerlendirme', 'is_desired_trend', '_DEBUG_WeeklyChanges_RAW', '_DEBUG_IsDesiredTrend']]
+        first_fund_calculated_columns = temp_row_cols if temp_row_cols else []
+
+    base_cols = ['Fon Kodu', 'Fon Adı']
+    debug_cols = ['_DEBUG_WeeklyChanges_RAW', '_DEBUG_IsDesiredTrend']
+    final_view_columns = base_cols + first_fund_calculated_columns + ['Değerlendirme'] + debug_cols
+    all_df_columns = final_view_columns + ['is_desired_trend']
+    existing_cols_for_df = [col for col in all_df_columns if col in results_df.columns]
+
+    if not results_df.empty:
+        results_df = results_df[existing_cols_for_df]
+        results_df.sort_values(by='Değerlendirme', ascending=False, na_position='last', inplace=True)
+    else:
+        results_df = pd.DataFrame(columns=existing_cols_for_df)
+
+    for col in results_df.columns:
+        if results_df[col].dtype == 'float64':
+            results_df[col] = results_df[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(results_df[col]), None)
+        if col in ['is_desired_trend', '_DEBUG_IsDesiredTrend']:
+            results_df[col] = results_df[col].astype(bool)
+
+    print(f"\n\n✅ Haftalık tarama tamamlandı. {len(results_df)} fon için sonuçlar hesaplandı.")
+    print(f" Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_WEEKLY}' sayfasına yazılıyor...")
+
+    try:
+        spreadsheet = gc.open_by_key(SHEET_ID)
+        try:
+            worksheet = spreadsheet.worksheet(WORKSHEET_NAME_WEEKLY)
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"ℹ️ '{WORKSHEET_NAME_WEEKLY}' sayfası bulunamadı, yeni sayfa oluşturuluyor...")
+            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_WEEKLY, rows="1000", cols=50)
+        
+        worksheet.clear()
+        
+        df_to_gsheets = results_df[[col for col in final_view_columns if col in results_df.columns]]
+
+        if not df_to_gsheets.empty:
+            worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(), value_input_option='USER_ENTERED')
+            
+            format_requests = [apply_cell_format_request(worksheet.id, idx + 1, len(df_to_gsheets.columns), True)
+                               for idx, row in results_df.reset_index(drop=True).iterrows() if row.get('is_desired_trend', False)]
+            
+            if format_requests:
+                spreadsheet.batch_update({"requests": format_requests})
+                print(f"✅ {len(format_requests)} satır, istenen trende uyduğu için işaretlendi.")
+            
+            body_resize = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet.id, "dimension": "COLUMNS"}}}]}
+            spreadsheet.batch_update(body_resize)
+            print("✅ Google Sheets güncellendi ve sütunlar yeniden boyutlandırıldı.")
+    except Exception as e:
+        print(f"❌ Google Sheets'e yazma hatası (Haftalık): {e}")
+        traceback.print_exc()
+    
+    print(f"--- Haftalık Tarama Bitti. Toplam Süre: {time.time() - start_time_main:.2f} saniye ---")
+
+
 # --- TEKİL TARİH TARAMA FONKSİYONU ---
 def run_single_date_scan_to_gsheets(scan_date: date, gc):
     start_time_main = time.time()
@@ -129,7 +282,6 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Bitiş Tarihi: {scan_date.strftime('%d.%m.%Y')} ---")
 
     total_fon_count = len(all_fon_data_df)
-    # Veri çekme aralığını biraz daha geniş tutalım
     genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, months=2)
     fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, scan_date, 90, 3, 5)
                     for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
@@ -166,9 +318,7 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
                         fiyat_onceki = get_price_on_or_before(fund_history, target_date)
                         degisimler[name] = calculate_change(fiyat_son, fiyat_onceki)
                     
-                    # --- DÜZELTİLMİŞ YB% HESAPLAMASI ---
                     try:
-                        # scan_date'in geçerli bir yıl olduğundan emin ol
                         if scan_date and scan_date.year > 1:
                             yb_target_date = date(scan_date.year - 1, 12, 31)
                             fiyat_onceki_yb = get_price_on_or_before(fund_history, yb_target_date)
@@ -193,7 +343,6 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
     column_order = ['Fon Kodu', 'Fon Adı', 'Bitiş Tarihi', 'Fiyat', 'Günlük %', 'Haftalık %',
                    '2 Haftalık %', 'Aylık %', '3 Aylık %', '6 Aylık %', '1 Yıllık %', 'YB %']
     
-    # Oluşturulan tüm sütunları al ve sırala
     existing_cols_tekil = [col for col in column_order if col in results_df_tekil.columns]
     
     if not results_df_tekil.empty:
@@ -243,9 +392,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     scan_date_input = datetime.now(TIMEZONE).date()
-    
+    num_weeks_input = 2 # Haftalık tarama için 2 hafta geriye dönük
+
+    # --- TEKİL TARAMA ---
     print("\n" + "="*40)
-    print("     TEKİL TARAMA ÇALIŞTIRILIYOR")
+    print("     ÖNCE TEKİL TARAMA ÇALIŞTIRILIYOR")
     print("="*40)
     results_df = run_single_date_scan_to_gsheets(scan_date_input, gc_auth)
 
@@ -263,4 +414,10 @@ if __name__ == "__main__":
     else:
         print("⚠️ Tarama sonucu boş veya hatalı. Yeniden deneme mekanizması atlanıyor.")
     
+    # --- HAFTALIK TARAMA ---
+    print("\n" + "="*40)
+    print("     SONRA HAFTALIK TARAMA ÇALIŞTIRILIYOR")
+    print("="*40)
+    run_weekly_scan_to_gsheets(num_weeks_input, gc_auth)
+
     print("\n--- Tüm işlemler tamamlandı ---")
