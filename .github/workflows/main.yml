@@ -21,27 +21,23 @@ jobs:
     - name: Python Ortamını Kur
       uses: actions/setup-python@v5
       with:
-        python-version: '3.x'
+        python-version: '3.x' # Python 3.x sürümünü kullanır
 
     - name: Bağımlılıkları Yükle
       run: |
-        pip install pandas numpy gspread pytz python-dateutil tefas tqdm openpyxl
-        # Eğer requirements.txt dosyanız varsa, bunun yerine aşağıdaki satırı kullanabilirsiniz:
-        # pip install -r gereksinimler.txt
+        pip install pandas numpy gspread pytz python-dateutil tefas tqdm openpyxl selenium # selenium paketi de gereklidir.
+        pip install webdriver-manager # BU SATIR EKLENDİ
 
     - name: İlk Veri Taramasını Çalıştır
-      id: startup_scan # Bu adıma bir id veriyoruz
-      run: python tarama_script.py # BURASI DÜZELTİLDİ: your_scan_script.py -> tarama_script.py
+      id: startup_scan
+      run: python tarama_script.py
       env:
-        # Python betiğinizin çıktılarını yakalamak için gerekli
-        # 'needs_retry' çıktısı buradan okunacak
         GITHUB_OUTPUT: ${{ steps.startup_scan.outputs }}
 
     - name: Boş Veri Kontrolü ve Yeniden Çalıştırma (Gerekliyse)
-      # Sadece önceki adımın 'needs_retry' çıktısı 'true' ise çalışıyor
       if: steps.startup_scan.outputs.needs_retry == 'true'
       run: |
         echo "5 veya daha fazla boş fiyat verisi tespit edildi. 25 dakika bekleyip tekrar denenecek."
-        sleep 1500 # 25 dakika * 60 saniye = 1500 saniye
+        sleep 1500
         echo "Yeniden tarama başlatılıyor..."
-        python tarama_script.py # BURASI DÜZELTİLDİ: your_scan_script.py -> tarama_script.py
+        python tarama_script.py
