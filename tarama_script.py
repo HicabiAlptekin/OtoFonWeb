@@ -9,20 +9,18 @@ import gspread
 import pytz
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
-from tefas.program import get_data as tefas_get_data # <-- BURASI DEĞİŞTİRİLDİ
-# from tefas import Crawler # Bu satır artık kullanılmıyor
-# from google.colab import auth # Colab'a özel olduğu için kaldırıldı
+from tefas import Crawler
 from tqdm import tqdm
 import concurrent.futures
 import traceback
-import os # Ortam değişkenlerini okumak için eklendi
-import json # JSON anahtarını işlemek için eklendi
-import sys # Script'i hata ile sonlandırmak için eklendi
+import os
+import json
+import sys
 
 # --- Sabitler ---
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
 F_COLS = ["date", "price"]
-SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14' # Kendi Google Sheet ID'niz
+SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
 WORKSHEET_NAME_MANUAL = 'veriler'
 WORKSHEET_NAME_WEEKLY = 'haftalık'
 TIMEZONE = pytz.timezone('Europe/Istanbul')
@@ -31,13 +29,10 @@ TIMEZONE = pytz.timezone('Europe/Istanbul')
 def google_sheets_auth_github():
     print("\n🔄 Google Hizmet Hesabı ile kimlik doğrulaması yapılıyor...")
     try:
-        # GitHub Secrets'tan gelen JSON anahtarını al
         gcp_service_account_key_json = os.getenv('GCP_SERVICE_ACCOUNT_KEY')
-
         if not gcp_service_account_key_json:
             print("❌ Hata: GCP_SERVICE_ACCOUNT_KEY ortam değişkeni ayarlanmamış.")
-            sys.exit(1) # Kritik hata, script'i sonlandır
-
+            sys.exit(1)
         credentials = json.loads(gcp_service_account_key_json)
         gc = gspread.service_account_from_dict(credentials)
         print("✅ Kimlik doğrulama başarılı.")
@@ -45,25 +40,18 @@ def google_sheets_auth_github():
     except Exception as e:
         print(f"❌ Kimlik doğrulama sırasında hata oluştu: {e}")
         traceback.print_exc()
-        sys.exit(1) # Kritik hata, script'i sonlandır
+        sys.exit(1)
 
-# --- TEFAS İstemcisi Başlatma (DEĞİŞTİRİLDİ) ---
-# Artık tefas.program.get_data fonksiyonunu doğrudan kullanacağız.
-# Genel bir "crawler" nesnesi oluşturmaya gerek kalmadı.
-# Bu blok, artık sadece bir bilgi mesajı ve olası bir hata yakalama görevi görür.
+# --- TEFAS Crawler Başlatma ---
 try:
-    # tefas_crawler_global = Crawler() # Bu satır silindi
-    print("TEFAS veri çekme fonksiyonu başarıyla yüklendi.")
+    tefas_crawler_global = Crawler()
+    print("TEFAS Crawler başarıyla başlatıldı.")
 except Exception as e:
-    print(f"TEFAS veri çekme fonksiyonu yüklenirken hata: {e}")
+    print(f"TEFAS Crawler başlatılırken hata: {e}")
     traceback.print_exc()
-    # Hata durumunda sys.exit(1) yapmamıza gerek yok,
-    # çünkü get_data çağrısı sırasında da hata yakalanabilir.
-    # Ancak yine de genel bir sorun varsa script'i durdurmak mantıklı olabilir.
-    sys.exit(1) # Kritik bir hata, script'i sonlandır
+    tefas_crawler_global = None
 
-
-# --- Yardımcı Fonksiyonlar (Değişiklik Yok) ---
+# --- Yardımcı Fonksiyonlar ---
 def load_takasbank_fund_list():
     print(f"🔄 Takasbank'tan güncel fon listesi yükleniyor...")
     try:
@@ -91,7 +79,6 @@ def get_price_on_or_before(df_fund_history, target_date: date):
     if df_fund_history is None or df_fund_history.empty or target_date is None: return np.nan
     df_filtered = df_fund_history[df_fund_history['date'] <= target_date].copy()
     if not df_filtered.empty:
-        # En güncel tarihi almak için sondan ilk elemanı seç
         return df_filtered.sort_values(by='date', ascending=False)['price'].iloc[0]
     return np.nan
 
@@ -110,11 +97,10 @@ def calculate_change(current_price, past_price):
         return ((current_price_float - past_price_float) / past_price_float) * 100
     except (ValueError, TypeError): return np.nan
 
-# --- TEFAS Verisi Çekme Fonksiyonu (DEĞİŞTİRİLDİ) ---
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall, chunk_days, max_retries, retry_delay = args
-    # global tefas_crawler_global # Bu satır artık gerekmiyor
-    # if tefas_crawler_global is None: return fon_kodu, pd.DataFrame() # Bu kontrol artık gerekmiyor
+    global tefas_crawler_global
+    if tefas_crawler_global is None: return fon_kodu, pd.DataFrame()
 
     all_fon_data = pd.DataFrame()
     current_start_date_chunk = start_date_overall
@@ -126,7 +112,7 @@ def fetch_data_for_fund_parallel(args):
         while retries < max_retries and not success:
             try:
                 if current_start_date_chunk <= current_end_date_chunk:
-                    chunk_data_fetched = tefas_get_data( # <-- tefas_crawler_global.fetch yerine tefas_get_data
+                    chunk_data_fetched = tefas_crawler_global.fetch(
                         start=current_start_date_chunk.strftime("%Y-%m-%d"),
                         end=current_end_date_chunk.strftime("%Y-%m-%d"),
                         name=fon_kodu,
@@ -289,16 +275,14 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
             worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_WEEKLY, rows="1000", cols=max(100, len(final_view_columns) + 5))
         worksheet.clear()
 
-        df_to_gsheets = results_df[[col for col in final_view_columns if col in results_df.columns]]
-
-        if not df_to_gsheets.empty:
-            worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(),
+        if not results_df.empty:
+            worksheet.update(values=[results_df.columns.values.tolist()] + results_df.values.tolist(),
                              value_input_option='USER_ENTERED')
 
             format_requests = []
             for idx, row in results_df.reset_index(drop=True).iterrows():
                 if row.get('is_desired_trend', False):
-                    format_requests.append(apply_cell_format_request(worksheet.id, idx + 1, len(df_to_gsheets.columns), True))
+                    format_requests.append(apply_cell_format_request(worksheet.id, idx + 1, len(results_df.columns), True))
 
             if format_requests:
                 spreadsheet.batch_update({"requests": format_requests})
@@ -307,9 +291,9 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                 print("ℹ️ İstenen trende (H1>H2>...) uyan hiçbir fon bulunamadı.")
 
             body_resize = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet.id,
-                                                                               "dimension": "COLUMNS",
-                                                                               "startIndex": 0,
-                                                                               "endIndex": len(df_to_gsheets.columns)}}}]}
+                                                                              "dimension": "COLUMNS",
+                                                                              "startIndex": 0,
+                                                                              "endIndex": len(results_df.columns)}}}]}
             spreadsheet.batch_update(body_resize)
         else:
             print("ℹ️ Google Sheets'e yazılacak veri bulunmuyor.")
@@ -322,18 +306,18 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     except Exception as e:
         print(f"❌ Google Sheets'e yazma/formatlama sırasında hata: {e}")
         traceback.print_exc()
-        sys.exit(1) # Hata durumunda script'i sonlandır
+        sys.exit(1)
 
-# --- TEKİL TARAMA FONKSİYONU ---
-def run_scan_to_gsheets(scan_date: date, gc):
+# --- TEKİL TARAMA FONKSİYONU (GÜNCELLENDİ) ---
+def run_scan_to_gsheets(scan_date: date, gc, attempt=1):
     start_time_main = time.time()
     all_fon_data_df = load_takasbank_fund_list()
 
     if all_fon_data_df.empty:
         print("❌ Taranacak fon listesi alınamadı.")
-        return
+        return None
 
-    print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Referans Tarih: {scan_date.strftime('%d.%m.%Y')} ---")
+    print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Referans Tarih: {scan_date.strftime('%d.%m.%Y')} | Deneme: {attempt} ---")
 
     all_results = []
     genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, months=1, days=15)
@@ -351,8 +335,8 @@ def run_scan_to_gsheets(scan_date: date, gc):
             try:
                 _, fund_history = future.result()
                 fiyat_son, degisimler = np.nan, {p: np.nan for p in ['Günlük %', 'Haftalık %', '2 Haftalık %',
-                                                                     'Aylık %', '3 Aylık %', '6 Aylık %',
-                                                                     '1 Yıllık %', 'YB %']}
+                                                                      'Aylık %', '3 Aylık %', '6 Aylık %',
+                                                                      '1 Yıllık %', 'YB %']}
 
                 if fund_history is not None and not fund_history.empty:
                     fiyat_son = get_price_on_or_before(fund_history, scan_date)
@@ -395,10 +379,6 @@ def run_scan_to_gsheets(scan_date: date, gc):
                 print(f"Hata (Tekil - {fon_kodu_completed}): {exc}")
                 traceback.print_exc()
 
-
-    print(f"\n\n✅ Tekil tarama tamamlandı. {len(all_results)} fon için sonuç hesaplandı.")
-    print(f"🔄 Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_MANUAL}' sayfasına yazılıyor...")
-
     results_df_tekil = pd.DataFrame(all_results)
     column_order = ['Fon Kodu', 'Fon Adı', 'Bitiş Tarihi', 'Fiyat',
                     'Günlük %', 'Haftalık %', '2 Haftalık %', 'Aylık %',
@@ -416,6 +396,11 @@ def run_scan_to_gsheets(scan_date: date, gc):
         elif results_df_tekil[col].dtype == 'object':
             results_df_tekil[col] = results_df_tekil[col].apply(lambda x: None if (isinstance(x, str) and (x.lower() in ['nan', 'nat'])) or pd.isna(x) else x)
 
+    # Fiyat verisi olmayan veya NaN olan fonları say
+    missing_price_count = results_df_tekil['Fiyat'].isna().sum()
+    print(f"ℹ️ Fiyat verisi eksik olan fon sayısı: {missing_price_count}")
+
+    # Google Sheets'e yazma
     try:
         spreadsheet = gc.open_by_key(SHEET_ID)
         try:
@@ -446,13 +431,15 @@ def run_scan_to_gsheets(scan_date: date, gc):
 
         end_time_main_tekil = time.time()
         print("\n" + "="*50 +
-              f"\n🎉 TEKİL TARAMA BAŞARIYLA TAMAMLANDI! ({datetime.now(TIMEZONE).strftime('%d.%m.%Y %H:%M:%S')})\n" +
+              f"\n🎉 TEKİL TARAMA BAŞARIYLA TAMAMLANDI! (Deneme: {attempt}, {datetime.now(TIMEZONE).strftime('%d.%m.%Y %H:%M:%S')})\n" +
               f"⏱️ Toplam süre: {((end_time_main_tekil - start_time_main) / 60):.2f} dakika\n" +
               "="*50)
+
+        return results_df_tekil, missing_price_count
     except Exception as e:
         print(f"❌ Google Sheets'e yazma sırasında hata (Tekil): {e}")
         traceback.print_exc()
-        sys.exit(1) # Hata durumunda script'i sonlandır
+        sys.exit(1)
 
 # --- Ana Çalışma Bloğu (GitHub Actions için) ---
 if __name__ == "__main__":
@@ -460,67 +447,25 @@ if __name__ == "__main__":
     gc_auth = google_sheets_auth_github()
     if not gc_auth:
         print("❌ Google Sheets yetkilendirmesi başarısız olduğu için işlem iptal edildi.")
-        sys.exit(1) # Kimlik doğrulama başarısız olursa çıkış yap
+        sys.exit(1)
 
-    # Otomatik tarama için bugünün tarihini al
     today_in_istanbul = datetime.now(TIMEZONE).date()
     print(f"Bugünün tarihi (İstanbul Saati): {today_in_istanbul.strftime('%d.%m.%Y')}")
 
+    # İlk tekil tarama
     print("\n=== TEKİL TARAMA BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
-    run_scan_to_gsheets(today_in_istanbul, gc_auth)
+    results_df, missing_price_count = run_scan_to_gsheets(today_in_istanbul, gc_auth, attempt=1)
 
-    # Haftalık Tarama Seçimi için (2 hafta sabit)
-    print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ==STM")
+    # Fiyat verisi eksik olan fon sayısı 5 veya daha fazlaysa, 20 dakika bekle ve tekrar tara
+    if missing_price_count >= 5:
+        print(f"ℹ️ Eksik fiyat verisi olan fon sayısı ({missing_price_count}) >= 5. 20 dakika sonra tekrar tarama yapılacak...")
+        time.sleep(20 * 60)  # 20 dakika bekle
+        print("\n=== TEKİL TARAMA TEKRAR BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
+        results_df, missing_price_count = run_scan_to_gsheets(today_in_istanbul, gc_auth, attempt=2)
+        print(f"ℹ️ İkinci tarama sonrası eksik fiyat verisi olan fon sayısı: {missing_price_count}")
+
+    # Haftalık tarama
+    print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ===")
     run_weekly_scan_to_gsheets(2, gc_auth)
 
     print("\n--- Tüm Otomatik Tarama İşlemleri Tamamlandı ---")
-
-    # --- Yeniden Deneme İçin Boş Veri Kontrolü ---
-    print("\n🔄 Boş veri kontrolü yapılıyor...")
-    try:
-        spreadsheet = gc_auth.open_by_key(SHEET_ID)
-        worksheet_manual = spreadsheet.worksheet(WORKSHEET_NAME_MANUAL)
-        
-        # 'Fiyat' sütununu bul
-        # Başlıkların ilk satırda olduğunu varsayıyoruz
-        headers = worksheet_manual.row_values(1)
-        try:
-            price_col_index = headers.index('Fiyat') + 1 # 1-indexed for gspread
-        except ValueError:
-            print("❌ 'Fiyat' sütunu bulunamadı. Boş veri kontrolü yapılamıyor.")
-            price_col_index = -1 # İşleme devam etmemesi için
-
-        needs_retry = "false"
-        if price_col_index != -1:
-            # Fiyat sütunundaki tüm değerleri oku (başlık hariç)
-            price_values = worksheet_manual.col_values(price_col_index)[1:] # İlk eleman başlık
-            
-            # Boş veya boşluk içeren değerleri say
-            empty_price_count = sum(1 for val in price_values if not val.strip())
-            
-            print(f"Toplam boş fiyat verisi sayısı: {empty_price_count}")
-
-            if empty_price_count >= 5:
-                needs_retry = "true"
-                print(f"❗ {empty_price_count} adet boş fiyat verisi tespit edildi (>= 5). Yeniden deneme gerekli.")
-            else:
-                print(f"✅ Yeterli sayıda fiyat verisi mevcut ({empty_price_count} < 5). Yeniden deneme gerekli değil.")
-        else:
-            print("ℹ️ 'Fiyat' sütunu olmadığı için boş veri kontrolü atlandı. Yeniden deneme yok.")
-
-    except Exception as e:
-        print(f"❌ Boş veri kontrolü sırasında hata oluştu: {e}")
-        traceback.print_exc()
-        needs_retry = "false" # Hata durumunda bile yeniden denemeyi tetikleme
-
-    # GitHub Actions çıktısını ayarla
-    # Bu çıktı, main.yml'deki bir sonraki adım tarafından okunacak.
-    # Bu mekanizma sayesinde, Python script'i kendi çıktısını GitHub Actions'a bildirebilir.
-    # GITHUB_OUTPUT, GitHub Actions'ın özel bir ortam değişkenidir.
-    # Bu dosyaya yazılan her şey, bir sonraki adımlarda "outputs" olarak kullanılabilir.
-    print(f"Setting needs_retry output to: {needs_retry}")
-    # GITHUB_OUTPUT yolu, GitHub Actions tarafından otomatik olarak ayarlanır.
-    with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-        print(f'needs_retry={needs_retry}', file=fh)
-
-    print("\n--- Script Tamamlandı ---")
