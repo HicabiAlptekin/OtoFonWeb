@@ -8,5 +8,3 @@ pytz
 numpy
 tqdm
 openpyxl
-jupyter
-ipywidgets
