@@ -1,4 +1,4 @@
-tefas-crawler>=0.2.0  # Adjust to the latest or a known compatible version
+tefas-crawler>=0.2.0  # `tefas` yerine doğru kütüphane, en son sürümü kontrol edin
 gspread
 google-auth-oauthlib
 google-auth-httplib2
