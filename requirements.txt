@@ -1,4 +1,4 @@
-tefas-crawler>=0.2.0
+tefas-crawler
 gspread
 google-auth-oauthlib
 google-auth-httplib2
@@ -8,3 +8,5 @@ pytz
 numpy
 tqdm
 openpyxl
+jupyter
+ipywidgets
