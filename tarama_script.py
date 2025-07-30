@@ -10,9 +10,10 @@ import pytz
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 try:
-    from tefas import Tefas  # Attempt to import Tefas class (adjust based on actual library)
-except ImportError:
-    from tefas import fetch  # Fallback to fetch function if class-based API is not available
+    from tefas_crawler import get_funds  # `tefas-crawler` kütüphanesinin güncel API'si
+except ImportError as e:
+    print(f"❌ Hata: tefas-crawler kütüphanesi yüklenemedi veya yanlış sürümde: {e}")
+    raise
 from tqdm import tqdm
 import concurrent.futures
 import traceback
@@ -46,13 +47,8 @@ def google_sheets_auth_github():
         sys.exit(1)
 
 # --- TEFAS Crawler Başlatma ---
-try:
-    tefas_crawler_global = Tefas() if 'Tefas' in globals() else None
-    print("TEFAS Crawler başarıyla başlatıldı.")
-except Exception as e:
-    print(f"TEFAS Crawler başlatılırken hata: {e}")
-    traceback.print_exc()
-    tefas_crawler_global = None
+# `tefas_crawler_global` artık bir sınıf örneği yerine fonksiyonel kullanım için kaldırıldı
+print("TEFAS Crawler fonksiyonları hazır (tefas-crawler kütüphanesi ile).")
 
 # --- Yardımcı Fonksiyonlar ---
 def load_takasbank_fund_list():
@@ -102,8 +98,7 @@ def calculate_change(current_price, past_price):
 
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall, chunk_days, max_retries, retry_delay = args
-    global tefas_crawler_global
-    if tefas_crawler_global is None and 'fetch' not in globals():
+    if 'get_funds' not in globals():
         return fon_kodu, pd.DataFrame()
 
     all_fon_data = pd.DataFrame()
@@ -116,20 +111,12 @@ def fetch_data_for_fund_parallel(args):
         while retries < max_retries and not success:
             try:
                 if current_start_date_chunk <= current_end_date_chunk:
-                    if tefas_crawler_global:
-                        chunk_data_fetched = tefas_crawler_global.fetch(
-                            start=current_start_date_chunk.strftime("%Y-%m-%d"),
-                            end=current_end_date_chunk.strftime("%Y-%m-%d"),
-                            name=fon_kodu,
-                            columns=F_COLS
-                        )
-                    else:
-                        chunk_data_fetched = fetch(
-                            start=current_start_date_chunk.strftime("%Y-%m-%d"),
-                            end=current_end_date_chunk.strftime("%Y-%m-%d"),
-                            name=fon_kodu,
-                            columns=F_COLS
-                        )
+                    chunk_data_fetched = get_funds(
+                        start=current_start_date_chunk.strftime("%Y-%m-%d"),
+                        end=current_end_date_chunk.strftime("%Y-%m-%d"),
+                        fund_code=fon_kodu,
+                        columns=F_COLS
+                    )
                 if not chunk_data_fetched.empty:
                     all_fon_data = pd.concat([all_fon_data, chunk_data_fetched], ignore_index=True)
                 success = True
