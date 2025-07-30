@@ -9,7 +9,10 @@ import gspread
 import pytz
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
-from tefas import Crawler
+try:
+    from tefas import Tefas  # Attempt to import Tefas class (adjust based on actual library)
+except ImportError:
+    from tefas import fetch  # Fallback to fetch function if class-based API is not available
 from tqdm import tqdm
 import concurrent.futures
 import traceback
@@ -44,7 +47,7 @@ def google_sheets_auth_github():
 
 # --- TEFAS Crawler Başlatma ---
 try:
-    tefas_crawler_global = Crawler()
+    tefas_crawler_global = Tefas() if 'Tefas' in globals() else None
     print("TEFAS Crawler başarıyla başlatıldı.")
 except Exception as e:
     print(f"TEFAS Crawler başlatılırken hata: {e}")
@@ -100,7 +103,8 @@ def calculate_change(current_price, past_price):
 def fetch_data_for_fund_parallel(args):
     fon_kodu, start_date_overall, end_date_overall, chunk_days, max_retries, retry_delay = args
     global tefas_crawler_global
-    if tefas_crawler_global is None: return fon_kodu, pd.DataFrame()
+    if tefas_crawler_global is None and 'fetch' not in globals():
+        return fon_kodu, pd.DataFrame()
 
     all_fon_data = pd.DataFrame()
     current_start_date_chunk = start_date_overall
@@ -112,12 +116,20 @@ def fetch_data_for_fund_parallel(args):
         while retries < max_retries and not success:
             try:
                 if current_start_date_chunk <= current_end_date_chunk:
-                    chunk_data_fetched = tefas_crawler_global.fetch(
-                        start=current_start_date_chunk.strftime("%Y-%m-%d"),
-                        end=current_end_date_chunk.strftime("%Y-%m-%d"),
-                        name=fon_kodu,
-                        columns=F_COLS
-                    )
+                    if tefas_crawler_global:
+                        chunk_data_fetched = tefas_crawler_global.fetch(
+                            start=current_start_date_chunk.strftime("%Y-%m-%d"),
+                            end=current_end_date_chunk.strftime("%Y-%m-%d"),
+                            name=fon_kodu,
+                            columns=F_COLS
+                        )
+                    else:
+                        chunk_data_fetched = fetch(
+                            start=current_start_date_chunk.strftime("%Y-%m-%d"),
+                            end=current_end_date_chunk.strftime("%Y-%m-%d"),
+                            name=fon_kodu,
+                            columns=F_COLS
+                        )
                 if not chunk_data_fetched.empty:
                     all_fon_data = pd.concat([all_fon_data, chunk_data_fetched], ignore_index=True)
                 success = True
@@ -308,14 +320,14 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
         traceback.print_exc()
         sys.exit(1)
 
-# --- TEKİL TARAMA FONKSİYONU (GÜNCELLENDİ) ---
+# --- TEKİL TARAMA FONKSİYONU ---
 def run_scan_to_gsheets(scan_date: date, gc, attempt=1):
     start_time_main = time.time()
     all_fon_data_df = load_takasbank_fund_list()
 
     if all_fon_data_df.empty:
         print("❌ Taranacak fon listesi alınamadı.")
-        return None
+        return None, 0
 
     print(f"\n--- TEKİL TARAMA BAŞLATILIYOR | Referans Tarih: {scan_date.strftime('%d.%m.%Y')} | Deneme: {attempt} ---")
 
@@ -396,11 +408,9 @@ def run_scan_to_gsheets(scan_date: date, gc, attempt=1):
         elif results_df_tekil[col].dtype == 'object':
             results_df_tekil[col] = results_df_tekil[col].apply(lambda x: None if (isinstance(x, str) and (x.lower() in ['nan', 'nat'])) or pd.isna(x) else x)
 
-    # Fiyat verisi olmayan veya NaN olan fonları say
     missing_price_count = results_df_tekil['Fiyat'].isna().sum()
     print(f"ℹ️ Fiyat verisi eksik olan fon sayısı: {missing_price_count}")
 
-    # Google Sheets'e yazma
     try:
         spreadsheet = gc.open_by_key(SHEET_ID)
         try:
@@ -452,19 +462,16 @@ if __name__ == "__main__":
     today_in_istanbul = datetime.now(TIMEZONE).date()
     print(f"Bugünün tarihi (İstanbul Saati): {today_in_istanbul.strftime('%d.%m.%Y')}")
 
-    # İlk tekil tarama
     print("\n=== TEKİL TARAMA BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
     results_df, missing_price_count = run_scan_to_gsheets(today_in_istanbul, gc_auth, attempt=1)
 
-    # Fiyat verisi eksik olan fon sayısı 5 veya daha fazlaysa, 20 dakika bekle ve tekrar tara
     if missing_price_count >= 5:
         print(f"ℹ️ Eksik fiyat verisi olan fon sayısı ({missing_price_count}) >= 5. 20 dakika sonra tekrar tarama yapılacak...")
-        time.sleep(20 * 60)  # 20 dakika bekle
+        time.sleep(20 * 60)
         print("\n=== TEKİL TARAMA TEKRAR BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
         results_df, missing_price_count = run_scan_to_gsheets(today_in_istanbul, gc_auth, attempt=2)
         print(f"ℹ️ İkinci tarama sonrası eksik fiyat verisi olan fon sayısı: {missing_price_count}")
 
-    # Haftalık tarama
     print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ===")
     run_weekly_scan_to_gsheets(2, gc_auth)
 
