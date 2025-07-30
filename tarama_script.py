@@ -457,15 +457,61 @@ if __name__ == "__main__":
     today_in_istanbul = datetime.now(TIMEZONE).date()
     print(f"Bugünün tarihi (İstanbul Saati): {today_in_istanbul.strftime('%d.%m.%Y')}")
 
-    # Manuel Tekil Tarama Seçimi için (Girdi olmadan)
-    # Otomatik tetikleyici için burayı çalıştıracağız, tarihi bugünün tarihi olacak
-    # Siz "manuel tarama seçimi" dediniz ama aslında otomasyon içinde
-    # `interactive_menu`'den 1 veya 4'ü seçmek yerine doğrudan fonksiyonu çağıracağız.
     print("\n=== TEKİL TARAMA BAŞLIYOR (Otomatik Tarih Seçimi ile) ===")
     run_scan_to_gsheets(today_in_istanbul, gc_auth)
 
     # Haftalık Tarama Seçimi için (2 hafta sabit)
-    print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ===")
+    print("\n=== HAFTALIK TARAMA BAŞLIYOR (2 Hafta Sabit ile) ==STM")
     run_weekly_scan_to_gsheets(2, gc_auth)
 
     print("\n--- Tüm Otomatik Tarama İşlemleri Tamamlandı ---")
+
+    # --- Yeniden Deneme İçin Boş Veri Kontrolü ---
+    print("\n🔄 Boş veri kontrolü yapılıyor...")
+    try:
+        spreadsheet = gc_auth.open_by_key(SHEET_ID)
+        worksheet_manual = spreadsheet.worksheet(WORKSHEET_NAME_MANUAL)
+        
+        # 'Fiyat' sütununu bul
+        # Başlıkların ilk satırda olduğunu varsayıyoruz
+        headers = worksheet_manual.row_values(1)
+        try:
+            price_col_index = headers.index('Fiyat') + 1 # 1-indexed for gspread
+        except ValueError:
+            print("❌ 'Fiyat' sütunu bulunamadı. Boş veri kontrolü yapılamıyor.")
+            price_col_index = -1 # İşleme devam etmemesi için
+
+        needs_retry = "false"
+        if price_col_index != -1:
+            # Fiyat sütunundaki tüm değerleri oku (başlık hariç)
+            price_values = worksheet_manual.col_values(price_col_index)[1:] # İlk eleman başlık
+            
+            # Boş veya boşluk içeren değerleri say
+            empty_price_count = sum(1 for val in price_values if not val.strip())
+            
+            print(f"Toplam boş fiyat verisi sayısı: {empty_price_count}")
+
+            if empty_price_count >= 5:
+                needs_retry = "true"
+                print(f"❗ {empty_price_count} adet boş fiyat verisi tespit edildi (>= 5). Yeniden deneme gerekli.")
+            else:
+                print(f"✅ Yeterli sayıda fiyat verisi mevcut ({empty_price_count} < 5). Yeniden deneme gerekli değil.")
+        else:
+            print("ℹ️ 'Fiyat' sütunu olmadığı için boş veri kontrolü atlandı. Yeniden deneme yok.")
+
+    except Exception as e:
+        print(f"❌ Boş veri kontrolü sırasında hata oluştu: {e}")
+        traceback.print_exc()
+        needs_retry = "false" # Hata durumunda bile yeniden denemeyi tetikleme
+
+    # GitHub Actions çıktısını ayarla
+    # Bu çıktı, main.yml'deki bir sonraki adım tarafından okunacak.
+    # Bu mekanizma sayesinde, Python script'i kendi çıktısını GitHub Actions'a bildirebilir.
+    # GITHUB_OUTPUT, GitHub Actions'ın özel bir ortam değişkenidir.
+    # Bu dosyaya yazılan her şey, bir sonraki adımlarda "outputs" olarak kullanılabilir.
+    print(f"Setting needs_retry output to: {needs_retry}")
+    # GITHUB_OUTPUT yolu, GitHub Actions tarafından otomatik olarak ayarlanır.
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+        print(f'needs_retry={needs_retry}', file=fh)
+
+    print("\n--- Script Tamamlandı ---")
