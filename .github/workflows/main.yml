@@ -26,20 +26,22 @@ jobs:
     - name: Bağımlılıkları Yükle
       run: |
         pip install pandas numpy gspread pytz python-dateutil tefas tqdm openpyxl
+        # Eğer requirements.txt dosyanız varsa, bunun yerine aşağıdaki satırı kullanabilirsiniz:
+        # pip install -r gereksinimler.txt
 
     - name: İlk Veri Taramasını Çalıştır
-      id: startup_scan # Bu adıma bir id veriyoruz - BURASI DOĞRU
-      run: python your_scan_script.py # Kendi Python betiğinizin adı
+      id: startup_scan # Bu adıma bir id veriyoruz
+      run: python tarama_script.py # BURASI DÜZELTİLDİ: your_scan_script.py -> tarama_script.py
       env:
         # Python betiğinizin çıktılarını yakalamak için gerekli
         # 'needs_retry' çıktısı buradan okunacak
-        GITHUB_OUTPUT: ${{ steps.startup_scan.outputs }} # HATA BURADAYDI, DÜZELTİLDİ
+        GITHUB_OUTPUT: ${{ steps.startup_scan.outputs }}
 
     - name: Boş Veri Kontrolü ve Yeniden Çalıştırma (Gerekliyse)
       # Sadece önceki adımın 'needs_retry' çıktısı 'true' ise çalışıyor
-      if: steps.startup_scan.outputs.needs_retry == 'true' # HATA BURADAYDI, DÜZELTİLDİ
+      if: steps.startup_scan.outputs.needs_retry == 'true'
       run: |
         echo "5 veya daha fazla boş fiyat verisi tespit edildi. 25 dakika bekleyip tekrar denenecek."
         sleep 1500 # 25 dakika * 60 saniye = 1500 saniye
         echo "Yeniden tarama başlatılıyor..."
-        python your_scan_script.py # Tarama betiğini tekrar çalıştır
+        python tarama_script.py # BURASI DÜZELTİLDİ: your_scan_script.py -> tarama_script.py
