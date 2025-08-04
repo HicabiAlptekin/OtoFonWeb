@@ -24,6 +24,11 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
+            echo "requirements.txt bulunamadı!"
+            exit 1
+          fi
+
+      - name: Analiz Scriptini Çalıştır
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: python analiz_script.py

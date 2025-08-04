@@ -1,1 +1,1 @@
-Fonanaliz: tefas sürüm kontrol adımı eklendi ve Crawler import yolu düzeltildi.
+Fonanaliz: tefas-crawler bağımlılığına geçildi ve main.yml temizlendi.
