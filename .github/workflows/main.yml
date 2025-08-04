@@ -29,6 +29,11 @@ jobs:
           fi
 
       - name: Analiz Scriptini Çalıştır
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: python analiz_script.py
+
+      - name: Excel Çıktısını Artifact Olarak Yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fon_Analizi_Excel_Ciktisi
+          path: Hisse_Senedi_Fon_Analizi_*.xlsx

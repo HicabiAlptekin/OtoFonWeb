@@ -2,6 +2,5 @@ pandas
 numpy
 tefas-crawler
 xlsxwriter
-gspread
-oauth2client
 webdriver-manager
+streamlit

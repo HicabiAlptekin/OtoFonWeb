@@ -1,1 +1,1 @@
-Fonanaliz: GitHub Actions iş akışı dosya yolu düzeltildi.
+Fonanaliz: Excel çıktısı GitHub Actions artifact olarak eklendi.

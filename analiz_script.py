@@ -84,7 +84,8 @@ def hesapla_metrikler(df_fon_fiyat):
         'Yatırımcı Sayısı': df_fon_fiyat['number_of_investors'].iloc[-1]
     }
 
-def main():
+def calistir_analiz():
+    """Fon analizini çalıştırır ve sonuçları bir DataFrame olarak döndürür."""
     print(f"--- MANUEL FON LİSTESİ İLE ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
     end_date = get_last_business_day()
     start_date = end_date - pd.DateOffset(months=ANALIZ_SURESI_AY)
@@ -110,94 +111,43 @@ def main():
             else:
                 print(f"UYARI: '{fon_kodu}' için veri alınamadı.")
 
-    if analiz_sonuclari:
-        df_sonuc = pd.DataFrame(analiz_sonuclari)
-        sutun_sirasi = [
-            'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
-            'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)'
-        ]
-        df_sonuc = df_sonuc[sutun_sirasi]
-        df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
-        
-        print("\n--- FON ANALİZ SONUÇLARI ---")
-        print(df_sonuc_sirali.to_string())
+    if not analiz_sonuclari:
+        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
+        return None, None
 
+    df_sonuc = pd.DataFrame(analiz_sonuclari)
+    sutun_sirasi = [
+        'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
+        'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)'
+    ]
+    df_sonuc = df_sonuc[sutun_sirasi]
+    df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
+    
+    print("\n--- FON ANALİZ SONUÇLARI ---")
+    print(df_sonuc_sirali.to_string())
+    
+    return df_sonuc_sirali, end_date_str
+
+def main():
+    """Script doğrudan çalıştırıldığında analiz yapar ve dosyayı kaydeder."""
+    df_sonuc_sirali, end_date_str = calistir_analiz()
+    
+    if df_sonuc_sirali is not None:
+        # Kullanıcının İndirilenler klasörünün yolunu bul
+        from pathlib import Path
+        downloads_path = Path.home() / "Downloads"
+        # Klasörün mevcut olduğundan emin ol
+        downloads_path.mkdir(parents=True, exist_ok=True)
         excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
-        with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
+        full_excel_path = downloads_path / excel_dosya_adi
+
+        with pd.ExcelWriter(full_excel_path, engine='xlsxwriter') as writer:
             df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
             worksheet = writer.sheets['Fon Analizi']
             for i, col in enumerate(df_sonuc_sirali.columns):
                 column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
                 worksheet.set_column(i, i, column_len)
-        print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
-        
-        # Google Sheets'e aktarma
-        try:
-            aktar_google_sheets(df_sonuc_sirali, "1tqXB_Bg1GM_Oo31oZK_IPgpJhOLQ08Ce1zxHMLMkBQw", "analiz çalışma sayfası")
-            print("\nAnaliz sonuçları Google Sheets'e başarıyla aktarıldı.")
-        except Exception as e:
-            print(f"HATA: Google Sheets'e aktarılırken bir sorun oluştu: {e}")
-
-    else:
-        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
-
-def aktar_google_sheets(df, spreadsheet_id, sheet_name):
-    import gspread
-    import os
-    import json
-
-    print("DEBUG: aktar_google_sheets fonksiyonu başladı.")
-
-    # Ortam değişkeninden kimlik bilgilerini al
-    credentials_json = os.environ.get('GOOGLE_CREDENTIALS')
-    if not credentials_json:
-        raise ValueError("GOOGLE_CREDENTIALS ortam değişkeni bulunamadı.")
-    print("DEBUG: GOOGLE_CREDENTIALS ortam değişkeni alındı.")
-
-    # JSON stringini Python dict'e dönüştür
-    try:
-        credentials_info = json.loads(credentials_json)
-        print("DEBUG: Kimlik bilgileri JSON olarak ayrıştırıldı.")
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Kimlik bilgileri JSON ayrıştırma hatası: {e}")
-
-    # gspread ile kimlik doğrulama
-    try:
-        gc = gspread.service_account_from_dict(credentials_info)
-        print("DEBUG: gspread ile kimlik doğrulama başarılı.")
-    except Exception as e:
-        raise ValueError(f"gspread kimlik doğrulama hatası: {e}")
-    
-    # E-tabloyu aç
-    try:
-        spreadsheet = gc.open_by_key(spreadsheet_id)
-        print(f"DEBUG: E-tablo '{spreadsheet_id}' açıldı.")
-    except Exception as e:
-        raise ValueError(f"E-tablo açılırken hata: {e}")
-    
-    # Çalışma sayfasını seç veya oluştur
-    try:
-        worksheet = spreadsheet.worksheet(sheet_name)
-        print(f"DEBUG: Çalışma sayfası '{sheet_name}' seçildi.")
-    except gspread.exceptions.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
-        print(f"DEBUG: '{sheet_name}' çalışma sayfası oluşturuldu.")
-    except Exception as e:
-        raise ValueError(f"Çalışma sayfası seçilirken/oluşturulurken hata: {e}")
-
-    # Mevcut verileri temizle (isteğe bağlı, ancak genellikle güncellemelerde tercih edilir)
-    try:
-        worksheet.clear()
-        print("DEBUG: Çalışma sayfası temizlendi.")
-    except Exception as e:
-        raise ValueError(f"Çalışma sayfası temizlenirken hata: {e}")
-
-    # DataFrame'i Google Sheet'e aktar
-    try:
-        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
-        print("DEBUG: Veriler Google Sheet'e aktarıldı.")
-    except Exception as e:
-        raise ValueError(f"Veriler Google Sheet'e aktarılırken hata: {e}")
+        print(f"\nAnaliz sonuçları '{full_excel_path}' dosyasına kaydedildi.")
 
 
 if __name__ == '__main__':
