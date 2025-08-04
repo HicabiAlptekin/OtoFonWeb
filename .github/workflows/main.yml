@@ -29,6 +29,9 @@ jobs:
             exit 1
           fi
 
+      - name: Tefas Sürümünü Kontrol Et
+        run: pip show tefas
+
       - name: Analiz Scriptini Çalıştır
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
