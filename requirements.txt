@@ -1,6 +1,6 @@
 pandas
 numpy
-tefas
+tefas-crawler
 xlsxwriter
 gspread
 oauth2client
