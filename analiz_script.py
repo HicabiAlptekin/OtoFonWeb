@@ -146,32 +146,58 @@ def aktar_google_sheets(df, spreadsheet_id, sheet_name):
     import os
     import json
 
+    print("DEBUG: aktar_google_sheets fonksiyonu başladı.")
+
     # Ortam değişkeninden kimlik bilgilerini al
     credentials_json = os.environ.get('GOOGLE_CREDENTIALS')
     if not credentials_json:
         raise ValueError("GOOGLE_CREDENTIALS ortam değişkeni bulunamadı.")
+    print("DEBUG: GOOGLE_CREDENTIALS ortam değişkeni alındı.")
 
     # JSON stringini Python dict'e dönüştür
-    credentials_info = json.loads(credentials_json)
+    try:
+        credentials_info = json.loads(credentials_json)
+        print("DEBUG: Kimlik bilgileri JSON olarak ayrıştırıldı.")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Kimlik bilgileri JSON ayrıştırma hatası: {e}")
 
     # gspread ile kimlik doğrulama
-    gc = gspread.service_account_from_dict(credentials_info)
+    try:
+        gc = gspread.service_account_from_dict(credentials_info)
+        print("DEBUG: gspread ile kimlik doğrulama başarılı.")
+    except Exception as e:
+        raise ValueError(f"gspread kimlik doğrulama hatası: {e}")
     
     # E-tabloyu aç
-    spreadsheet = gc.open_by_key(spreadsheet_id)
+    try:
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+        print(f"DEBUG: E-tablo '{spreadsheet_id}' açıldı.")
+    except Exception as e:
+        raise ValueError(f"E-tablo açılırken hata: {e}")
     
     # Çalışma sayfasını seç veya oluştur
     try:
         worksheet = spreadsheet.worksheet(sheet_name)
+        print(f"DEBUG: Çalışma sayfası '{sheet_name}' seçildi.")
     except gspread.exceptions.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
-        print(f"'{sheet_name}' çalışma sayfası oluşturuldu.")
+        print(f"DEBUG: '{sheet_name}' çalışma sayfası oluşturuldu.")
+    except Exception as e:
+        raise ValueError(f"Çalışma sayfası seçilirken/oluşturulurken hata: {e}")
 
     # Mevcut verileri temizle (isteğe bağlı, ancak genellikle güncellemelerde tercih edilir)
-    worksheet.clear()
+    try:
+        worksheet.clear()
+        print("DEBUG: Çalışma sayfası temizlendi.")
+    except Exception as e:
+        raise ValueError(f"Çalışma sayfası temizlenirken hata: {e}")
 
     # DataFrame'i Google Sheet'e aktar
-    worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+    try:
+        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        print("DEBUG: Veriler Google Sheet'e aktarıldı.")
+    except Exception as e:
+        raise ValueError(f"Veriler Google Sheet'e aktarılırken hata: {e}")
 
 
 if __name__ == '__main__':
