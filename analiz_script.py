@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from tefas import Crawler
+from tefas.crawler import Crawler
 import time
 import warnings
 import concurrent.futures
