@@ -1,1 +1,1 @@
-Fonanaliz: Google Sheets entegrasyonu ve GitHub Actions manuel tetikleme eklendi.
+Fonanaliz: webdriver-manager bağımlılığı eklendi.
