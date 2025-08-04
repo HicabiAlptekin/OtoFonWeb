@@ -1,1 +1,1 @@
-Fonanaliz: tefas Crawler import yolu düzeltildi.
+Fonanaliz: tefas sürümü 0.5.0 olarak sabitlendi ve Crawler import yolu düzeltildi.
