@@ -1,6 +1,6 @@
 pandas
 numpy
-tefas
+tefas==0.5.0
 xlsxwriter
 gspread
 oauth2client
