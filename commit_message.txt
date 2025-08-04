@@ -1,1 +1,1 @@
-Fonanaliz: Python sürümü 3.11'e yükseltildi ve tefas import yolu düzeltildi.
+Fonanaliz: Python sürümü 3.12'ye yükseltildi ve tefas Crawler import yolu tekrar düzeltildi.
