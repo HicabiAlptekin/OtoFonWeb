@@ -4,3 +4,4 @@ tefas
 xlsxwriter
 gspread
 oauth2client
+webdriver-manager

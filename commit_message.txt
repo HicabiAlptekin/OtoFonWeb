@@ -1,1 +1,1 @@
-Initial project setup
+Fonanaliz: Google Sheets entegrasyonu ve GitHub Actions manuel tetikleme eklendi.
