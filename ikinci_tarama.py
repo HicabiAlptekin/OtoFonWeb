@@ -10,7 +10,7 @@ import pytz
 import os
 import json
 import sys
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from dateutil.relativedelta import relativedelta
 from tefas import Crawler
 from tqdm import tqdm
@@ -390,6 +390,25 @@ if __name__ == "__main__":
     gc_auth = google_sheets_auth()
     if not gc_auth:
         sys.exit(1)
+
+    # Tarama zamanını al ve Google Sheet'e yaz
+    try:
+        spreadsheet = gc_auth.open_by_key(SHEET_ID)
+        # Türkiye saati (UTC+3) için timezone nesnesi oluştur
+        tz_turkey = timezone(timedelta(hours=3))
+        # Mevcut zamanı al ve formatla
+        now_in_turkey = datetime.now(tz_turkey)
+        timestamp_str = "Son Tarama Zamanı (TSİ): " + now_in_turkey.strftime('%Y-%m-%d %H:%M:%S')
+
+        # 'Fonaliz' çalışma sayfasını seç ve A1 hücresine zaman damgasını yaz
+        worksheet_to_update = spreadsheet.worksheet('Fonaliz')
+        worksheet_to_update.update_acell('A1', timestamp_str)
+        print(f"✅ Tarama zamanı '{timestamp_str}' Google Sheet'e yazıldı.")
+    except gspread.exceptions.WorksheetNotFound:
+        print("⚠️ 'Fonaliz' sayfası bulunamadı. Tarama zamanı yazılamadı ama işleme devam ediliyor.")
+    except Exception as e:
+        print(f"❌ Tarama zamanı Google Sheet'e yazılamadı: {e}")
+    print()
 
     scan_date_input = datetime.now(TIMEZONE).date()
     num_weeks_input = 2 # Haftalık tarama için 2 hafta geriye dönük
