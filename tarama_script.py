@@ -169,7 +169,7 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
         try:
             worksheet = spreadsheet.worksheet(WORKSHEET_NAME_FONALIZ)
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_FONALIZ, rows="1000", cols=20)
+            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_FONALIZ, rows="1000", cols=20)
         
         worksheet.clear()
         df_sonuc_sirali = df_sonuc_sirali.replace([np.inf, -np.inf], np.nan).fillna('')
