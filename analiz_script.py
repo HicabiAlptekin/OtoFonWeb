@@ -194,21 +194,19 @@ def calistir_analiz():
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
     
-    print("\n--- DEBUG: DataFrame oluşturuldu, ilk 5 satır ---")
-    print(df_sonuc.head().to_string())
-    print("--------------------------------------------------\n")
+    # HATA AYIKLAMA: DataFrame'deki gerçek sütun adlarını yazdır.
+    print(f"\n--- DEBUG: DataFrame Sütunları ---")
+    print(df_sonuc.columns.tolist())
+    print("-------------------------------------\n")
 
-    # 'Sentiment Puanı' sütununun varlığını kontrol et
-    if 'Sentiment Puanı' not in df_sonuc.columns:
-        print("HATA: 'Sentiment Puanı' sütunu DataFrame'de bulunamadı!")
-        df_sonuc['Sentiment Puanı'] = 0 # Hata durumunda sütunu varsayılan değerle ekle
-    
     sutun_sirasi = [
         'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
         'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)',
         'Sentiment Puanı'
     ]
     
+    # Bu satır, 'Sentiment Puanı' sütunu yanlış isimlendirilmişse HATA VERECEKTİR.
+    # Bu, sorunun kaynağını bulmamız için kasıtlıdır.
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
     
