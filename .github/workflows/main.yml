@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
+        with:
+          ref: 'main'
 
       - name: Python 3.10 Kurulumu
         uses: actions/setup-python@v4

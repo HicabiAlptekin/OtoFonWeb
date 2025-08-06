@@ -53,7 +53,8 @@ def get_fon_verileri_parallel(args):
         df['date'] = pd.to_datetime(df['date'])
         fon_adi = df['title'].iloc[0] if not df.empty else fon_kodu
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
-    except Exception:
+    except Exception as e:
+        print(f"HATA: '{fon_kodu}' verisi çekilirken bir sorun oluştu: {e}")
         return fon_kodu, None, None
 
 def hesapla_metrikler(df_fon_fiyat):
@@ -146,7 +147,7 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
     print(f"Yatırımcı artışı ve aynı gün fiyat artışı: {same_day_positive_price_correlation} gün")
     print(f"Yatırımcı artışı ve ertesi gün piyasa değeri artışı: {next_day_positive_correlation} gün")
     print(f"Yatırımcı artışı ve ertesi gün fiyat artışı: {next_day_positive_price_correlation} gün")
-    print(f"Sentiment Puanı (100 üzerinden): {round(sentiment_score, 2)}")
+    print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2)}")
     print("--------------------------------------------------")
 
     return {
@@ -154,7 +155,7 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
         'same_day_market_cap_increase': same_day_positive_correlation,
         'same_day_price_increase': same_day_positive_price_correlation,
         'next_day_market_cap_increase': next_day_positive_correlation,
-        'next_day_price_increase': next_day_positive_price_correlation
+        'next_day_price_increase': next_day_price_correlation
     }, round(sentiment_score, 2)
 
 def calistir_analiz():
@@ -175,11 +176,12 @@ def calistir_analiz():
         for future in concurrent.futures.as_completed(future_to_fon):
             fon_kodu, fon_adi, data = future.result()
             if data is not None:
-                correlation_results, sentiment_score = analyze_daily_correlations(data, fon_kodu) # Sentiment puanını yakala
+                correlation_results, sentiment_score = analyze_daily_correlations(data, fon_kodu)
+                print(f"DEBUG: Fon '{fon_kodu}' için Sentiment Puanı: {sentiment_score}")
 
                 metrikler = hesapla_metrikler(data)
                 if metrikler:
-                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score} # Sentiment puanını ekle
+                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score}
                     analiz_sonuclari.append(sonuc)
                 else:
                     print(f"UYARI: '{fon_kodu}' için metrikler hesaplanamadı.")
@@ -191,11 +193,22 @@ def calistir_analiz():
         return None, None
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
+    
+    print("\n--- DEBUG: DataFrame oluşturuldu, ilk 5 satır ---")
+    print(df_sonuc.head().to_string())
+    print("--------------------------------------------------\n")
+
+    # 'Sentiment Puanı' sütununun varlığını kontrol et
+    if 'Sentiment Puanı' not in df_sonuc.columns:
+        print("HATA: 'Sentiment Puanı' sütunu DataFrame'de bulunamadı!")
+        df_sonuc['Sentiment Puanı'] = 0 # Hata durumunda sütunu varsayılan değerle ekle
+    
     sutun_sirasi = [
         'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
         'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)',
-        'Sentiment Puanı' # Yeni sütunu buraya ekle
+        'Sentiment Puanı'
     ]
+    
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
     
