@@ -205,7 +205,7 @@ def main():
     """Script doğrudan çalıştırıldığında analiz yapar ve dosyayı kaydeder."""
     df_sonuc_sirali, end_date_str = calistir_analiz()
 
-    if df_sonuc_sirali is not None:
+    if df_sonuc_sirali is not None and not df_sonuc_sirali.empty:
         # HATA DÜZELTMESİ: Dosya, GitHub Actions'ın bulabilmesi için projenin ana dizinine kaydedilmelidir.
         # 'Downloads' klasörüne kaydetmek, CI/CD ortamında hataya neden olur.
         excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
@@ -217,6 +217,10 @@ def main():
                 column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
                 worksheet.set_column(i, i, column_len)
         print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
+    else:
+        print("\nHATA: Analiz sonucunda hiçbir fon verisi üretilemedi. Excel dosyası oluşturulmayacak.")
+        print("Olası Nedenler: Analiz tarih aralığında yeterli veri bulunamadı veya veri çekme işlemi tüm fonlar için başarısız oldu.")
+        sys.exit(1)
 
 
 if __name__ == '__main__':
