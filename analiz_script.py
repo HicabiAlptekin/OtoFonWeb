@@ -9,6 +9,7 @@ import warnings
 import concurrent.futures
 import sys
 from tqdm import tqdm
+import pytz
 
 warnings.filterwarnings('ignore')
 sys.stdout.reconfigure(encoding='utf-8')
@@ -17,7 +18,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 ANALIZ_SURESI_AY = 3
 MAX_WORKERS = 10
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
-TIMEZONE = pytz.timezone('Europe/Istanbul') # Gerekli import eklendi
+TIMEZONE = pytz.timezone('Europe/Istanbul')
 
 # --- OTOFON'DAN ALINAN YARDIMCI FONKSİYONLAR ---
 
@@ -274,6 +275,4 @@ def main():
         print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
 
 if __name__ == '__main__':
-    # Gerekli import'u main bloğuna taşıdık
-    import pytz
     main()
