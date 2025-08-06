@@ -1,4 +1,4 @@
-# Fonaliz - Otomatik Fon Analiz Arac
+# Fonaliz - Otomatik Fon Analiz Araci
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -15,21 +15,21 @@ sys.stdout.reconfigure(encoding='utf-8')
 ANALIZ_SURESI_AY = 3
 MAX_WORKERS = 10
 MANUAL_FON_KODLARI = [
-    "DKR", "ESP", "AOJ", "SBH", "PPH", "KOT", "FD1", "PP1", "KHC", "PBN", 
-    "AEV", "YAS", "OTM", "DTL", "BID", "BDY", "GNH", "HKH", "KHA", "HFI", 
-    "KPA", "BV1", "GNS", "DXP", "YHB", "BIH", "OHK", "MTK", "HJB", "KPH", 
-    "BFT", "AES", "TZD", "FCK", "GOH", "IHT", "POS", "RDF", "KUA", "FRC", 
-    "GKF", "FDG", "MD2", "TI3", "MD1", "ICH", "MTH", "NNF", "HMS", "ICF", 
-    "RPD", "RTP", "GO3", "FBC", "GO4", "JUP", "IAE", "BUL", "IFN", "TPV", 
-    "BTZ", "THD", "TGA", "HNC", "YLY", "IHK", "BVM", "GO1", "HGM", "ZJL", 
-    "TKF", "TI2", "HMC", "BIO", "YFV", "GPF", "ACD", "RIK", "HMG", "HVK", 
-    "PGS", "KHT", "HKG", "MGB", "PGD", "KLH", "RTH", "YPV", "EKF", "KTN", 
-    "UNT", "MPK", "IV8", "RKS", "MPF", "IAT", "DBK", "OPD", "RKH", "NJY", 
-    "DBZ", "YCK", "PPM", "KSV", "KLU", "AC5", "RBV", "NSH", "MUT", "VMV", 
-    "DID", "DDA", "TPF", "BHI", "OTK", "HDK", "KIA", "DPK", "HIM", "SHE", 
-    "MCU", "IML", "ICS", "KIH", "DKL", "HML", "MAD", "YZK", "CKF", "NKA", 
-    "TMM", "IDH", "RD1", "KMF", "OJK", "NJF", "PAF", "MKG", "HBF", "NAU", 
-    "OGD", "YNK", "GOL", "PKF", "KZU", "TTA", "RPG", "TCA", "DBA", "AFO", 
+    "DKR", "ESP", "AOJ", "SBH", "PPH", "KOT", "FD1", "PP1", "KHC", "PBN",
+    "AEV", "YAS", "OTM", "DTL", "BID", "BDY", "GNH", "HKH", "KHA", "HFI",
+    "KPA", "BV1", "GNS", "DXP", "YHB", "BIH", "OHK", "MTK", "HJB", "KPH",
+    "BFT", "AES", "TZD", "FCK", "GOH", "IHT", "POS", "RDF", "KUA", "FRC",
+    "GKF", "FDG", "MD2", "TI3", "MD1", "ICH", "MTH", "NNF", "HMS", "ICF",
+    "RPD", "RTP", "GO3", "FBC", "GO4", "JUP", "IAE", "BUL", "IFN", "TPV",
+    "BTZ", "THD", "TGA", "HNC", "YLY", "IHK", "BVM", "GO1", "HGM", "ZJL",
+    "TKF", "TI2", "HMC", "BIO", "YFV", "GPF", "ACD", "RIK", "HMG", "HVK",
+    "PGS", "KHT", "HKG", "MGB", "PGD", "KLH", "RTH", "YPV", "EKF", "KTN",
+    "UNT", "MPK", "IV8", "RKS", "MPF", "IAT", "DBK", "OPD", "RKH", "NJY",
+    "DBZ", "YCK", "PPM", "KSV", "KLU", "AC5", "RBV", "NSH", "MUT", "VMV",
+    "DID", "DDA", "TPF", "BHI", "OTK", "HDK", "KIA", "DPK", "HIM", "SHE",
+    "MCU", "IML", "ICS", "KIH", "DKL", "HML", "MAD", "YZK", "CKF", "NKA",
+    "TMM", "IDH", "RD1", "KMF", "OJK", "NJF", "PAF", "MKG", "HBF", "NAU",
+    "OGD", "YNK", "GOL", "PKF", "KZU", "TTA", "RPG", "TCA", "DBA", "AFO",
     "YKT", "GGK", "ONE"
 ]
 
@@ -46,7 +46,7 @@ def get_fon_verileri_parallel(args):
     print(f"'{fon_kodu}' için veri çekiliyor...")
     try:
         crawler = Crawler()
-        df = crawler.fetch(start=start_date, end=end_date, name=fon_kodu, 
+        df = crawler.fetch(start=start_date, end=end_date, name=fon_kodu,
                            columns=["date", "price", "market_cap", "number_of_investors", "title"])
         if df.empty:
             return fon_kodu, None, None
@@ -116,14 +116,6 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
 
     total_investor_increases = df[df['investor_change'] > 0].shape[0]
 
-    print(f"--- {fon_kodu} için Günlük Korelasyon Analizi ---")
-    print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
-    print(f"Yatırımcı artışı ve aynı gün piyasa değeri artışı: {same_day_positive_correlation} gün")
-    print(f"Yatırımcı artışı ve aynı gün fiyat artışı: {same_day_positive_price_correlation} gün")
-    print(f"Yatırımcı artışı ve ertesi gün piyasa değeri artışı: {next_day_positive_correlation} gün")
-    print(f"Yatırımcı artışı ve ertesi gün fiyat artışı: {next_day_positive_price_correlation} gün")
-    print("--------------------------------------------------")
-
     # Sentiment Puanı Hesaplama (Ağırlıklı)
     sentiment_score = 0
     if total_investor_increases > 0:
@@ -135,19 +127,15 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
         )
         # Maksimum olası ağırlıklı puan (her yatırımcı artışı için tüm senaryoların ağırlıklarının toplamı)
         max_possible_weighted_score = total_investor_increases * sum(weights.values())
-        
+
         if max_possible_weighted_score > 0:
             sentiment_score = (weighted_score / max_possible_weighted_score) * 100
         else:
             sentiment_score = 0
 
-    print(f"--- {fon_kodu} için Günlük Korelasyon Analizi ---")
+    print(f"--- {fon_kodu} için Sentiment Analizi ---")
     print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
-    print(f"Yatırımcı artışı ve aynı gün piyasa değeri artışı: {same_day_positive_correlation} gün")
-    print(f"Yatırımcı artışı ve aynı gün fiyat artışı: {same_day_positive_price_correlation} gün")
-    print(f"Yatırımcı artışı ve ertesi gün piyasa değeri artışı: {next_day_positive_correlation} gün")
-    print(f"Yatırımcı artışı ve ertesi gün fiyat artışı: {next_day_positive_price_correlation} gün")
-    print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2)}")
+    print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2):.2f}")
     print("--------------------------------------------------")
 
     return {
@@ -169,7 +157,7 @@ def calistir_analiz():
 
     tasks = [(fon_kodu, start_date_str, end_date_str) for fon_kodu in MANUAL_FON_KODLARI]
     analiz_sonuclari = []
-    
+
     print(f"\n{len(tasks)} adet fon için veriler paralel olarak çekiliyor...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(get_fon_verileri_parallel, task): task[0] for task in tasks}
@@ -193,7 +181,7 @@ def calistir_analiz():
         return None, None
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
-    
+
     # HATA AYIKLAMA: DataFrame'deki gerçek sütun adlarını yazdır.
     print(f"\n--- DEBUG: DataFrame Sütunları ---")
     print(df_sonuc.columns.tolist())
@@ -204,37 +192,31 @@ def calistir_analiz():
         'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)',
         'Sentiment Puanı'
     ]
-    
-    # Bu satır, 'Sentiment Puanı' sütunu yanlış isimlendirilmişse HATA VERECEKTİR.
-    # Bu, sorunun kaynağını bulmamız için kasıtlıdır.
+
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
-    
+
     print("\n--- FON ANALİZ SONUÇLARI ---")
     print(df_sonuc_sirali.to_string())
-    
+
     return df_sonuc_sirali, end_date_str
 
 def main():
     """Script doğrudan çalıştırıldığında analiz yapar ve dosyayı kaydeder."""
     df_sonuc_sirali, end_date_str = calistir_analiz()
-    
-    if df_sonuc_sirali is not None:
-        # Kullanıcının İndirilenler klasörünün yolunu bul
-        from pathlib import Path
-        downloads_path = Path.home() / "Downloads"
-        # Klasörün mevcut olduğundan emin ol
-        downloads_path.mkdir(parents=True, exist_ok=True)
-        excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
-        full_excel_path = downloads_path / excel_dosya_adi
 
-        with pd.ExcelWriter(full_excel_path, engine='xlsxwriter') as writer:
+    if df_sonuc_sirali is not None:
+        # HATA DÜZELTMESİ: Dosya, GitHub Actions'ın bulabilmesi için projenin ana dizinine kaydedilmelidir.
+        # 'Downloads' klasörüne kaydetmek, CI/CD ortamında hataya neden olur.
+        excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
+
+        with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
             df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
             worksheet = writer.sheets['Fon Analizi']
             for i, col in enumerate(df_sonuc_sirali.columns):
                 column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
                 worksheet.set_column(i, i, column_len)
-        print(f"\nAnaliz sonuçları '{full_excel_path}' dosyasına kaydedildi.")
+        print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
 
 
 if __name__ == '__main__':
