@@ -86,8 +86,8 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
 
     df = df_fon_data.copy()
     df['investor_change'] = df['number_of_investors'].diff()
-    df['market_cap_change'] = df['market_cap'].diff()
-    df['price_change'] = df['price'].pct_change()
+    df['market_cap_pct_change'] = df['market_cap'].pct_change()
+    df['price_pct_change'] = df['price'].pct_change()
 
     # Eşik Değerler (yüzde olarak, örn: 0.005 = %0.5)
     market_cap_change_threshold = 0.005
@@ -101,17 +101,17 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
         'next_day_market_cap': 0.1
     }
 
-    # Shift market_cap_change for 1-day lag analysis
-    df['market_cap_change_next_day'] = df['market_cap_change'].shift(-1)
-    df['price_change_next_day'] = df['price_change'].shift(-1)
+    # Shift for 1-day lag analysis using pre-calculated percentage changes
+    df['market_cap_pct_change_next_day'] = df['market_cap_pct_change'].shift(-1)
+    df['price_pct_change_next_day'] = df['price_pct_change'].shift(-1)
 
     # Scenario 1: Investor count increases, market cap increases on the same day (eşik değeri ile)
-    same_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_change'] > 0) & (df['market_cap_change'] / df['market_cap'].shift(1) >= market_cap_change_threshold)].shape[0]
-    same_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_change'] > 0) & (df['price_change'] >= price_change_threshold)].shape[0]
+    same_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change'] >= market_cap_change_threshold)].shape[0]
+    same_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change'] >= price_change_threshold)].shape[0]
 
     # Scenario 2: Investor count increases, market cap increases on the next day (eşik değeri ile)
-    next_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_change_next_day'] > 0) & (df['market_cap_change_next_day'] / df['market_cap'].shift(1) >= market_cap_change_threshold)].shape[0]
-    next_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_change_next_day'] > 0) & (df['price_change_next_day'] >= price_change_threshold)].shape[0]
+    next_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change_next_day'] >= market_cap_change_threshold)].shape[0]
+    next_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change_next_day'] >= price_change_threshold)].shape[0]
 
     total_investor_increases = df[df['investor_change'] > 0].shape[0]
 
@@ -141,12 +141,12 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
             sentiment_score = 0
 
     print(f"--- {fon_kodu} için Günlük Korelasyon Analizi ---")
-    print(f"Toplam yatırımcı artışı olan g�n say�s�: {total_investor_increases}")
-    print(f"Yatırımcı artışı ve aynı g�n piyasa de�eri artışı: {same_day_positive_correlation} g�n")
-    print(f"Yatırımcı artışı ve aynı g�n fiyat artışı: {same_day_positive_price_correlation} g�n")
-    print(f"Yatırımcı artışı ve ertesi g�n piyasa de�eri artışı: {next_day_positive_correlation} g�n")
-    print(f"Yatırımcı artışı ve ertesi g�n fiyat artışı: {next_day_positive_price_correlation} g�n")
-    print(f"Sentiment Puanı (100 �zerinden): {round(sentiment_score, 2)}")
+    print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
+    print(f"Yatırımcı artışı ve aynı gün piyasa değeri artışı: {same_day_positive_correlation} gün")
+    print(f"Yatırımcı artışı ve aynı gün fiyat artışı: {same_day_positive_price_correlation} gün")
+    print(f"Yatırımcı artışı ve ertesi gün piyasa değeri artışı: {next_day_positive_correlation} gün")
+    print(f"Yatırımcı artışı ve ertesi gün fiyat artışı: {next_day_positive_price_correlation} gün")
+    print(f"Sentiment Puanı (100 üzerinden): {round(sentiment_score, 2)}")
     print("--------------------------------------------------")
 
     return {
