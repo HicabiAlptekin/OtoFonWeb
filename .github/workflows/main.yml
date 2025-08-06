@@ -9,13 +9,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
         with:
           ref: 'main'
 
-      - name: Python 3.10 Kurulumu
+      - name: Python 3.12 Kurulumu
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
@@ -33,9 +35,12 @@ jobs:
       - name: Analiz Scriptini Çalıştır
         run: python analiz_script.py
 
-      - name: Excel Çıktısını Artifact Olarak Yükle
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Sürüm Oluştur ve Raporu Yükle
+        uses: softprops/action-gh-release@v1
+        if: success()
         with:
-          name: Fon_Analizi_Excel_Ciktisi
-          path: Hisse_Senedi_Fon_Analizi_*.xlsx
+          tag_name: analiz-${{ github.run_id }}
+          name: "Fon Analizi Raporu - ${{ github.run_id }}"
+          files: Hisse_Senedi_Fon_Analizi_*.xlsx
+          body: |
+            ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
