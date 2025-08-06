@@ -6,35 +6,31 @@ from tefas import Crawler
 import time
 import warnings
 import concurrent.futures
+import sys
 
 warnings.filterwarnings('ignore')
+sys.stdout.reconfigure(encoding='utf-8')
 
 # --- AYARLAR ---
 ANALIZ_SURESI_AY = 3
 MAX_WORKERS = 10
 MANUAL_FON_KODLARI = [
-    "BDS", "BIH", "HDA", "HEH", "HIM", "SPN", "IAU", "FS5", "ZBO", "KLH",
-    "HDK", "HMG", "LLA", "KHT", "MGH", "EC2", "HGM", "BST", "BDY", "ZJL",
-    "AC5", "YHB", "GOH", "NNF", "YHZ", "GO9", "KTI", "HKH", "KHA", "KHC",
-    "RBH", "FNT", "ALC", "BHI", "DKH", "ELZ", "AOJ", "KTS", "KPC", "ICZ",
-    "GBJ", "IVF", "RHS", "TAU", "DTL", "YHK", "ZPE", "AK3", "ADP", "OHB",
-    "SAS", "TTE", "KST", "HVZ", "GBH", "KPU", "ZJV", "GLG", "GKV", "TKF",
-    "MPS", "TZD", "RDF", "HVS", "RPI", "BTZ", "YCP", "FPH", "TLH", "GHS",
-    "IHA", "IDH", "GTM", "RTH", "GAF", "FSG", "MAC", "BUY", "ASJ", "PPB",
-    "PHE", "ICF", "GIE", "BID", "MMH", "HMS", "GAE", "YEF", "HBU", "AKU",
-    "FYD", "YUB", "TIE", "YHS", "GSP", "IIH", "ENJ", "KPH", "VAY", "GZR",
-    "GL1", "DDA", "YLE", "FUA", "IHK", "BIO", "DZE", "YDI", "OHK", "DXP",
-    "RBN", "DLD", "AYA", "HKR", "ST1", "DHJ", "IFN", "IHT", "DAH", "BVM",
-    "AEV", "KHJ", "OPI", "UPH", "YAS", "OPH", "TYH", "TLZ", "KYA", "ZLH",
-    "AAV", "GMR", "IHZ", "DPT", "YLY", "NHY", "HKM", "ONE", "GIH", "THV",
-    "BUL", "THT", "TI2", "TI3", "NSH", "PPM", "HAT", "NPH", "HRZ", "MUT",
-    "MTH", "HFI", "IML", "PHI", "KPA", "IHP", "BIG", "ZHH", "KVT", "POS",
-    "BFT", "BSH", "BHL", "RKH", "BHA", "BNH", "BRT", "BV1", "DOH", "DUH",
-    "FRC", "GKG", "GNH", "GNS", "GRT", "GTH", "HIH", "HNC", "IDI", "IMB",
-    "KHB", "KIH", "KOT", "KPF", "MCU", "MGB", "MHF", "MKA", "MTF", "MTK",
-    "NLE", "NST", "OMG", "PAO", "PBN", "PGS", "PHK", "PMP", "PPH", "PTO",
-    "PYR", "RHI", "RIA", "SBH", "SKO", "SNY", "SRL", "SSS", "THF", "YHI",
-    "YMH", "YPR"
+    "DKR", "ESP", "AOJ", "SBH", "PPH", "KOT", "FD1", "PP1", "KHC", "PBN", 
+    "AEV", "YAS", "OTM", "DTL", "BID", "BDY", "GNH", "HKH", "KHA", "HFI", 
+    "KPA", "BV1", "GNS", "DXP", "YHB", "BIH", "OHK", "MTK", "HJB", "KPH", 
+    "BFT", "AES", "TZD", "FCK", "GOH", "IHT", "POS", "RDF", "KUA", "FRC", 
+    "GKF", "FDG", "MD2", "TI3", "MD1", "ICH", "MTH", "NNF", "HMS", "ICF", 
+    "RPD", "RTP", "GO3", "FBC", "GO4", "JUP", "IAE", "BUL", "IFN", "TPV", 
+    "BTZ", "THD", "TGA", "HNC", "YLY", "IHK", "BVM", "GO1", "HGM", "ZJL", 
+    "TKF", "TI2", "HMC", "BIO", "YFV", "GPF", "ACD", "RIK", "HMG", "HVK", 
+    "PGS", "KHT", "HKG", "MGB", "PGD", "KLH", "RTH", "YPV", "EKF", "KTN", 
+    "UNT", "MPK", "IV8", "RKS", "MPF", "IAT", "DBK", "OPD", "RKH", "NJY", 
+    "DBZ", "YCK", "PPM", "KSV", "KLU", "AC5", "RBV", "NSH", "MUT", "VMV", 
+    "DID", "DDA", "TPF", "BHI", "OTK", "HDK", "KIA", "DPK", "HIM", "SHE", 
+    "MCU", "IML", "ICS", "KIH", "DKL", "HML", "MAD", "YZK", "CKF", "NKA", 
+    "TMM", "IDH", "RD1", "KMF", "OJK", "NJF", "PAF", "MKG", "HBF", "NAU", 
+    "OGD", "YNK", "GOL", "PKF", "KZU", "TTA", "RPG", "TCA", "DBA", "AFO", 
+    "YKT", "GGK", "ONE"
 ]
 
 def get_last_business_day():
@@ -84,6 +80,83 @@ def hesapla_metrikler(df_fon_fiyat):
         'Yatırımcı Sayısı': df_fon_fiyat['number_of_investors'].iloc[-1]
     }
 
+def analyze_daily_correlations(df_fon_data, fon_kodu):
+    if df_fon_data is None or df_fon_data.empty:
+        return None, 0 # Sentiment puanı da döndür
+
+    df = df_fon_data.copy()
+    df['investor_change'] = df['number_of_investors'].diff()
+    df['market_cap_change'] = df['market_cap'].diff()
+    df['price_change'] = df['price'].pct_change()
+
+    # Eşik Değerler (yüzde olarak, örn: 0.005 = %0.5)
+    market_cap_change_threshold = 0.005
+    price_change_threshold = 0.005
+
+    # Ağırlıklar (toplamı 1.0 olmalı)
+    weights = {
+        'same_day_price': 0.4,
+        'same_day_market_cap': 0.3,
+        'next_day_price': 0.2,
+        'next_day_market_cap': 0.1
+    }
+
+    # Shift market_cap_change for 1-day lag analysis
+    df['market_cap_change_next_day'] = df['market_cap_change'].shift(-1)
+    df['price_change_next_day'] = df['price_change'].shift(-1)
+
+    # Scenario 1: Investor count increases, market cap increases on the same day (eşik değeri ile)
+    same_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_change'] > 0) & (df['market_cap_change'] / df['market_cap'].shift(1) >= market_cap_change_threshold)].shape[0]
+    same_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_change'] > 0) & (df['price_change'] >= price_change_threshold)].shape[0]
+
+    # Scenario 2: Investor count increases, market cap increases on the next day (eşik değeri ile)
+    next_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_change_next_day'] > 0) & (df['market_cap_change_next_day'] / df['market_cap'].shift(1) >= market_cap_change_threshold)].shape[0]
+    next_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_change_next_day'] > 0) & (df['price_change_next_day'] >= price_change_threshold)].shape[0]
+
+    total_investor_increases = df[df['investor_change'] > 0].shape[0]
+
+    print(f"--- {fon_kodu} için Günlük Korelasyon Analizi ---")
+    print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
+    print(f"Yatırımcı artışı ve aynı gün piyasa değeri artışı: {same_day_positive_correlation} gün")
+    print(f"Yatırımcı artışı ve aynı gün fiyat artışı: {same_day_positive_price_correlation} gün")
+    print(f"Yatırımcı artışı ve ertesi gün piyasa değeri artışı: {next_day_positive_correlation} gün")
+    print(f"Yatırımcı artışı ve ertesi gün fiyat artışı: {next_day_positive_price_correlation} gün")
+    print("--------------------------------------------------")
+
+    # Sentiment Puanı Hesaplama (Ağırlıklı)
+    sentiment_score = 0
+    if total_investor_increases > 0:
+        weighted_score = (
+            (same_day_positive_price_correlation * weights['same_day_price']) +
+            (same_day_positive_correlation * weights['same_day_market_cap']) +
+            (next_day_positive_price_correlation * weights['next_day_price']) +
+            (next_day_positive_correlation * weights['next_day_market_cap'])
+        )
+        # Maksimum olası ağırlıklı puan (her yatırımcı artışı için tüm senaryoların ağırlıklarının toplamı)
+        max_possible_weighted_score = total_investor_increases * sum(weights.values())
+        
+        if max_possible_weighted_score > 0:
+            sentiment_score = (weighted_score / max_possible_weighted_score) * 100
+        else:
+            sentiment_score = 0
+
+    print(f"--- {fon_kodu} için Günlük Korelasyon Analizi ---")
+    print(f"Toplam yatırımcı artışı olan g�n say�s�: {total_investor_increases}")
+    print(f"Yatırımcı artışı ve aynı g�n piyasa de�eri artışı: {same_day_positive_correlation} g�n")
+    print(f"Yatırımcı artışı ve aynı g�n fiyat artışı: {same_day_positive_price_correlation} g�n")
+    print(f"Yatırımcı artışı ve ertesi g�n piyasa de�eri artışı: {next_day_positive_correlation} g�n")
+    print(f"Yatırımcı artışı ve ertesi g�n fiyat artışı: {next_day_positive_price_correlation} g�n")
+    print(f"Sentiment Puanı (100 �zerinden): {round(sentiment_score, 2)}")
+    print("--------------------------------------------------")
+
+    return {
+        'total_investor_increases': total_investor_increases,
+        'same_day_market_cap_increase': same_day_positive_correlation,
+        'same_day_price_increase': same_day_positive_price_correlation,
+        'next_day_market_cap_increase': next_day_positive_correlation,
+        'next_day_price_increase': next_day_positive_price_correlation
+    }, round(sentiment_score, 2)
+
 def calistir_analiz():
     """Fon analizini çalıştırır ve sonuçları bir DataFrame olarak döndürür."""
     print(f"--- MANUEL FON LİSTESİ İLE ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
@@ -102,9 +175,11 @@ def calistir_analiz():
         for future in concurrent.futures.as_completed(future_to_fon):
             fon_kodu, fon_adi, data = future.result()
             if data is not None:
+                correlation_results, sentiment_score = analyze_daily_correlations(data, fon_kodu) # Sentiment puanını yakala
+
                 metrikler = hesapla_metrikler(data)
                 if metrikler:
-                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler}
+                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score} # Sentiment puanını ekle
                     analiz_sonuclari.append(sonuc)
                 else:
                     print(f"UYARI: '{fon_kodu}' için metrikler hesaplanamadı.")
@@ -118,7 +193,8 @@ def calistir_analiz():
     df_sonuc = pd.DataFrame(analiz_sonuclari)
     sutun_sirasi = [
         'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
-        'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)'
+        'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)',
+        'Sentiment Puanı' # Yeni sütunu buraya ekle
     ]
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
