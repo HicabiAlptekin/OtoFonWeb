@@ -155,7 +155,7 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
         'same_day_market_cap_increase': same_day_positive_correlation,
         'same_day_price_increase': same_day_positive_price_correlation,
         'next_day_market_cap_increase': next_day_positive_correlation,
-        'next_day_price_increase': next_day_price_correlation
+        'next_day_price_increase': next_day_positive_price_correlation
     }, round(sentiment_score, 2)
 
 def calistir_analiz():
