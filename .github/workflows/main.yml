@@ -40,10 +40,10 @@ jobs:
         run: |
           if [ -f "Hisse_Senedi_Fon_Analizi_*.xlsx" ]; then
             echo "Excel dosyası başarıyla oluşturuldu."
-            echo "::set-output name=excel_file_exists::true"
+            echo "excel_file_exists=true" >> $GITHUB_OUTPUT
           else
             echo "Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
-            echo "::set-output name=excel_file_exists::false"
+            echo "excel_file_exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Sürüm Oluştur ve Raporları Yükle
