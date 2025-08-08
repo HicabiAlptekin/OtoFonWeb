@@ -35,12 +35,25 @@ jobs:
       - name: Analiz Scriptini Çalıştır
         run: python analiz_script.py
 
-      - name: Sürüm Oluştur ve Raporu Yükle
+      - name: Dosyaların Oluştuğunu Kontrol Et
+        id: check_files
+        run: |
+          if [ -f "Hisse_Senedi_Fon_Analizi_*.xlsx" ]; then
+            echo "Excel dosyası başarıyla oluşturuldu."
+            echo "::set-output name=excel_file_exists::true"
+          else
+            echo "Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
+            echo "::set-output name=excel_file_exists::false"
+          fi
+
+      - name: Sürüm Oluştur ve Raporları Yükle
         uses: softprops/action-gh-release@v1
-        if: success()
+        if: steps.check_files.outputs.excel_file_exists == 'true'
         with:
           tag_name: analiz-${{ github.run_id }}
           name: "Fon Analizi Raporu - ${{ github.run_id }}"
-          files: Hisse_Senedi_Fon_Analizi_*.xlsx
+          files: |
+            Hisse_Senedi_Fon_Analizi_*.xlsx
+            analiz_ozeti.txt
           body: |
             ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
