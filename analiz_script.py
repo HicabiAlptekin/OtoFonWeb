@@ -9,7 +9,9 @@ import concurrent.futures
 import sys
 import random
 
+# Deprecation uyarılarını kapat
 warnings.filterwarnings('ignore')
+# Konsol çıktısının Türkçe karakterleri doğru göstermesini sağlar
 sys.stdout.reconfigure(encoding='utf-8')
 
 # --- AYARLAR ---
@@ -34,6 +36,7 @@ MANUAL_FON_KODLARI = [
 ]
 
 def get_last_business_day():
+    """Son iş gününü hesaplar."""
     today = datetime.now()
     for i in range(7):
         day_to_check = today - timedelta(days=i)
@@ -42,9 +45,10 @@ def get_last_business_day():
     return today - timedelta(days=1)
 
 def get_fon_verileri_parallel(args):
+    """Belirtilen fon için TEFAS'tan verileri çeker."""
     fon_kodu, start_date, end_date, bekleme_suresi = args
-    print(f"'{fon_kodu}' için veri çekiliyor...")
     try:
+        # Sunucu kısıtlamalarını aşmak için rastgele bekleme süresi
         if bekleme_suresi > 0:
             time.sleep(random.uniform(bekleme_suresi, bekleme_suresi + 1.5))
         
@@ -58,10 +62,10 @@ def get_fon_verileri_parallel(args):
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
     except Exception as e:
         error_message = str(e)
-        print(f"HATA: '{fon_kodu}' verisi çekilirken bir sorun oluştu: {error_message}")
         return fon_kodu, None, error_message
 
 def hesapla_metrikler(df_fon_fiyat):
+    """Fon için finansal metrikleri (Sharpe, Sortino vb.) hesaplar."""
     if df_fon_fiyat is None or len(df_fon_fiyat) < 10: return None
     df_fon_fiyat['daily_return'] = df_fon_fiyat['price'].pct_change()
     df_fon_fiyat = df_fon_fiyat.dropna()
@@ -85,7 +89,8 @@ def hesapla_metrikler(df_fon_fiyat):
         'Yatırımcı Sayısı': df_fon_fiyat['number_of_investors'].iloc[-1]
     }
 
-def analyze_daily_correlations(df_fon_data, fon_kodu):
+def analyze_daily_correlations(df_fon_data):
+    """Yatırımcı sayısı değişimi ile fonun performansı arasındaki korelasyonu inceler."""
     if df_fon_data is None or df_fon_data.empty:
         return None, 0
     df = df_fon_data.copy()
@@ -108,34 +113,42 @@ def analyze_daily_correlations(df_fon_data, fon_kodu):
         max_possible_weighted_score = total_investor_increases * sum(weights.values())
         if max_possible_weighted_score > 0:
             sentiment_score = (weighted_score / max_possible_weighted_score) * 100
-    print(f"--- {fon_kodu} için Sentiment Analizi ---")
-    print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
-    print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2):.2f}")
-    print("--------------------------------------------------")
-    return {'total_investor_increases': total_investor_increases, 'same_day_market_cap_increase': same_day_positive_correlation, 'same_day_price_increase': same_day_positive_price_correlation, 'next_day_market_cap_increase': next_day_positive_correlation, 'next_day_price_increase': next_day_positive_price_correlation}, round(sentiment_score, 2)
+    return {'total_investor_increases': total_investor_increases, 'same_day_market_cap_increase': same_day_positive_correlation, 'same_day_price_increase': same_day_price_correlation, 'next_day_market_cap_increase': next_day_positive_correlation, 'next_day_price_increase': next_day_positive_price_correlation}, round(sentiment_score, 2)
 
 def tarama_asamasini_calistir(fon_kodlari, max_workers, bekleme_suresi, start_date_str, end_date_str, asama_adi):
-    """Belirtilen fon listesini, verilen parametrelerle tarar."""
+    """Belirtilen fon listesini, verilen parametrelerle tarar ve detaylı çıktı verir."""
     analiz_sonuclari = []
     basarisiz_fonlar = {}
     tasks = [(fon_kodu, start_date_str, end_date_str, bekleme_suresi) for fon_kodu in fon_kodlari]
 
-    print(f"\n--- {asama_adi} ({len(tasks)} fon) ---")
+    print(f"\n--- {asama_adi} ({len(tasks)} adet fon) başlatılıyor ---")
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_fon = {executor.submit(get_fon_verileri_parallel, task): task[0] for task in tasks}
+        
         for future in concurrent.futures.as_completed(future_to_fon):
             fon_kodu, fon_adi, data_or_error = future.result()
             if isinstance(data_or_error, pd.DataFrame):
                 data = data_or_error
-                _, sentiment_score = analyze_daily_correlations(data, fon_kodu)
+                # Veri çekme başarılıysa analiz yap
+                _, sentiment_score = analyze_daily_correlations(data)
                 metrikler = hesapla_metrikler(data)
+                
                 if metrikler:
                     sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score}
                     analiz_sonuclari.append(sonuc)
+                    print(f"✅ Başarılı: '{fon_kodu}' için veri çekildi ve analiz edildi.")
                 else:
                     basarisiz_fonlar[fon_kodu] = "Metrik hesaplanamadı (yetersiz veri)."
+                    print(f"⚠️ Uyarı: '{fon_kodu}' için veri çekildi ancak metrik hesaplamaya yetmedi.")
             else:
                 basarisiz_fonlar[fon_kodu] = data_or_error
+                print(f"❌ Hata: '{fon_kodu}' verisi çekilemedi. Neden: {data_or_error}")
+                
+    print(f"\n--- {asama_adi} tamamlandı ---")
+    print(f"Toplam {len(tasks)} fondan {len(analiz_sonuclari)} tanesi başarıyla işlendi.")
+    print(f"{len(basarisiz_fonlar)} fon başarısız oldu veya atlandı.")
+
     return analiz_sonuclari, basarisiz_fonlar
 
 def main():
@@ -147,6 +160,7 @@ def main():
 
     print(f"--- ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
     print(f"Analiz Tarih Aralığı: {start_date_str} -> {end_date_str}")
+    print(f"Toplam analize alınacak fon sayısı: {len(MANUAL_FON_KODLARI)}")
 
     # Aşamaların Parametreleri
     asama_parametreleri = [
@@ -178,39 +192,46 @@ def main():
     # Raporlama
     if not tum_sonuclar:
         print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
-        return
+    else:
+        df_sonuc = pd.DataFrame(tum_sonuclar)
+        sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)', 'Sentiment Puanı']
+        df_sonuc = df_sonuc[sutun_sirasi]
+        df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
 
-    df_sonuc = pd.DataFrame(tum_sonuclar)
-    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)', 'Sentiment Puanı']
-    df_sonuc = df_sonuc[sutun_sirasi]
-    df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
+        print("\n--- BİRLEŞTİRİLMİŞ FON ANALİZ SONUÇLARI ---")
+        print(df_sonuc_sirali.to_string())
 
-    print("\n--- BİRLEŞTİRİLMİŞ FON ANALİZ SONUÇLARI ---")
-    print(df_sonuc_sirali.to_string())
-
-    excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
-    with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
-        df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
-        worksheet = writer.sheets['Fon Analizi']
-        for i, col in enumerate(df_sonuc_sirali.columns):
-            column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
-            worksheet.set_column(i, i, column_len)
-    print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
-
+        excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
+        try:
+            with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
+                df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
+                worksheet = writer.sheets['Fon Analizi']
+                for i, col in enumerate(df_sonuc_sirali.columns):
+                    column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
+                    worksheet.set_column(i, i, column_len)
+            print(f"\n✅ Analiz sonuçları '{excel_dosya_adi}' dosyasına başarıyla kaydedildi.")
+        except Exception as e:
+            print(f"❌ Hata: Excel dosyası yazılırken bir sorun oluştu: {e}")
+            
     # Özet Raporu
     toplam_fon_sayisi = len(MANUAL_FON_KODLARI)
     basarili_fon_sayisi = len(tum_sonuclar)
-    basarisiz_fon_sayisi = len(basarisiz_fonlar_listesi)
-    basarisiz_detaylari = "\n".join([f"- {kod}: {sebep}" for kod, sebep in {k: v for k, v in tarama_asamasini_calistir(basarisiz_fonlar_listesi, 1, 0, start_date_str, end_date_str, 'Final Kontrol')[1].items()}.items()])
+    nihai_basarisiz_fon_sayisi = len(basarisiz_fonlar_listesi)
     
+    nihai_basarisiz_detaylari = ""
+    if basarisiz_fonlar_listesi:
+        # Son aşamada başarısız olanların detaylarını al
+        _, nihai_basarisiz_fonlar_dict = tarama_asamasini_calistir(basarisiz_fonlar_listesi, 1, 0, start_date_str, end_date_str, 'Hata Raporlama Aşaması')
+        nihai_basarisiz_detaylari = "\n".join([f"- {kod}: {sebep}" for kod, sebep in nihai_basarisiz_fonlar_dict.items()])
+
     ozet_metni = f"""
 --- Analiz Özet Raporu ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---
 Toplam Analize Alınan Fon Sayısı: {toplam_fon_sayisi}
 Başarıyla Analiz Edilen Fon Sayısı: {basarili_fon_sayisi}
-Nihai Başarısız Fon Sayısı: {basarisiz_fon_sayisi}
+Nihai Başarısız Fon Sayısı: {nihai_basarisiz_fon_sayisi}
 
 Başarısız Olan Fonlar ve Nedenleri:
-{basarisiz_detaylari if basarisiz_detaylari else 'Tüm fonlar başarıyla işlendi.'}
+{nihai_basarisiz_detaylari if nihai_basarisiz_detaylari else 'Tüm fonlar başarıyla işlendi.'}
 
 Olası Genel Hata Nedenleri:
 - TEFAS web sitesi, kısa sürede yapılan çok sayıda isteği engellemek için 'Rate Limiting' (erişim kısıtlaması) uygulamaktadır.
@@ -221,7 +242,7 @@ Olası Genel Hata Nedenleri:
     ozet_dosya_adi = "analiz_ozeti.txt"
     with open(ozet_dosya_adi, "w", encoding="utf-8") as f:
         f.write(ozet_metni)
-    print(f"Özet rapor '{ozet_dosya_adi}' dosyasına da kaydedildi.")
+    print(f"✅ Özet rapor '{ozet_dosya_adi}' dosyasına da kaydedildi.")
 
 if __name__ == '__main__':
     main()
