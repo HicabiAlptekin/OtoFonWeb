@@ -2,3 +2,4 @@ pandas
 numpy
 tefas-crawler
 xlsxwriter
+requests
