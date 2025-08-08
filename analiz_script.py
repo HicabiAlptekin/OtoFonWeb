@@ -129,7 +129,7 @@ def analyze_daily_correlations(df_fon_data):
         max_possible_weighted_score = total_investor_increases * sum(weights.values())
         if max_possible_weighted_score > 0:
             sentiment_score = (weighted_score / max_possible_weighted_score) * 100
-    return {'total_investor_increases': total_investor_increases, 'same_day_market_cap_increase': same_day_positive_correlation, 'same_day_price_increase': same_day_price_correlation, 'next_day_market_cap_increase': next_day_positive_correlation, 'next_day_price_increase': next_day_positive_price_correlation}, round(sentiment_score, 2)
+    return {'total_investor_increases': total_investor_increases, 'same_day_market_cap_increase': same_day_positive_correlation, 'same_day_price_increase': same_day_positive_price_correlation, 'next_day_market_cap_increase': next_day_positive_correlation, 'next_day_price_increase': next_day_positive_price_correlation}, round(sentiment_score, 2)
 
 def tarama_asamasini_calistir(fon_kodlari, max_workers, bekleme_suresi, start_date_str, end_date_str, asama_adi):
     """Belirtilen fon listesini, verilen parametrelerle tarar ve detaylı çıktı verir."""
@@ -203,6 +203,11 @@ def main():
             asama_adi=asama['asama_adi']
         )
         
+        # İlk aşama (Hızlı Tarama) için kontrol ekleme
+        if asama['asama_adi'] == '1. AŞAMA: Hızlı Tarama' and not yeni_sonuclar:
+            print("\n🚨 HATA: İlk aşamada hiçbir fonun verisi çekilemedi. İşlem durduruluyor.")
+            return # Programı burada sonlandır
+            
         tum_sonuclar.extend(yeni_sonuclar)
         basarisiz_fonlar_listesi = list(yeni_basarisiz_fonlar.keys())
 
