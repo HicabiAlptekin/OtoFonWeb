@@ -1,116 +1,37 @@
 # Fonaliz - Otomatik Fon Analiz Araci
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta, date
-from dateutil.relativedelta import relativedelta
+from datetime import datetime, timedelta
 from tefas import Crawler
 import time
 import warnings
 import concurrent.futures
 import sys
-from tqdm import tqdm
-import pytz
+import random
 
 warnings.filterwarnings('ignore')
 sys.stdout.reconfigure(encoding='utf-8')
 
 # --- AYARLAR ---
 ANALIZ_SURESI_AY = 3
-MAX_WORKERS = 10
-TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
-TIMEZONE = pytz.timezone('Europe/Istanbul')
-
-# --- OTOFON'DAN ALINAN YARDIMCI FONKSİYONLAR ---
-
-def load_takasbank_fund_list():
-    """Takasbank'tan güncel tüm fonların listesini çeker."""
-    print(f"Takasbank'tan güncel fon listesi yükleniyor...")
-    try:
-        df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
-        df_data = df_excel[['Fon Kodu']].copy()
-        df_data['Fon Kodu'] = df_data['Fon Kodu'].astype(str).str.strip().str.upper()
-        df_data.dropna(subset=['Fon Kodu'], inplace=True)
-        df_data = df_data[df_data['Fon Kodu'] != '']
-        print(f"✅ {len(df_data)} adet fon bilgisi okundu.")
-        return df_data['Fon Kodu'].unique().tolist()
-    except Exception as e:
-        print(f"❌ Takasbank Excel yükleme hatası: {e}")
-        return []
-
-def get_price_on_or_before(df_fund_history, target_date: date):
-    """Belirtilen tarihteki veya o tarihten önceki en son fiyatı bulur."""
-    if df_fund_history is None or df_fund_history.empty or target_date is None: return np.nan
-    df_filtered = df_fund_history[df_fund_history['date'] <= target_date].copy()
-    if not df_filtered.empty: return df_filtered.sort_values(by='date', ascending=False)['price'].iloc[0]
-    return np.nan
-
-def calculate_change(current_price, past_price):
-    """İki fiyat arasındaki yüzdesel değişimi hesaplar."""
-    if pd.isna(current_price) or pd.isna(past_price) or past_price is None or current_price is None: return np.nan
-    try:
-        current_price_float, past_price_float = float(current_price), float(past_price)
-        if past_price_float == 0: return np.nan
-        return ((current_price_float - past_price_float) / past_price_float) * 100
-    except (ValueError, TypeError): return np.nan
-
-def fetch_history_for_filter(fon_kodu):
-    """Filtreleme için bir fonun geçmiş verisini çeker."""
-    try:
-        crawler = Crawler()
-        end_date = datetime.now(TIMEZONE).date()
-        start_date = end_date - timedelta(days=60) # Trend analizi için yaklaşık 2 aylık veri yeterli
-        df = crawler.fetch(start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), name=fon_kodu, columns=["date", "price"])
-        if not df.empty:
-            df['date'] = pd.to_datetime(df['date']).dt.date
-        return fon_kodu, df
-    except Exception:
-        return fon_kodu, pd.DataFrame()
-
-def get_otofon_trend_fonlari(num_weeks: int = 2):
-    """
-    OtoFon'daki haftalık getirisi düşüş trendinde olan fonları belirler ve
-    bu fonların kodlarını bir liste olarak döndürür.
-    """
-    print(f"\n--- OtoFon Trend Filtrelemesi Başlatılıyor ({num_weeks} Hafta) ---")
-    all_fon_kodlari = load_takasbank_fund_list()
-    if not all_fon_kodlari:
-        return []
-
-    trend_fonlari = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_fon = {executor.submit(fetch_history_for_filter, fon_kodu): fon_kodu for fon_kodu in all_fon_kodlari}
-        progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon), total=len(all_fon_kodlari), desc="Trend Fonları Taranıyor")
-
-        for future in progress_bar:
-            fon_kodu_completed, fund_history = future.result()
-            if fund_history.empty:
-                continue
-
-            try:
-                weekly_changes_list = []
-                current_week_end_date_cal = datetime.now(TIMEZONE).date()
-
-                for i in range(num_weeks):
-                    current_week_start_date_cal = current_week_end_date_cal - timedelta(days=7)
-                    price_end = get_price_on_or_before(fund_history, current_week_end_date_cal)
-                    price_start = get_price_on_or_before(fund_history, current_week_start_date_cal)
-                    weekly_change = calculate_change(price_end, price_start)
-                    weekly_changes_list.append(weekly_change)
-                    current_week_end_date_cal = current_week_start_date_cal
-
-                valid_changes = [chg for chg in weekly_changes_list if not pd.isna(chg)]
-                if len(valid_changes) == num_weeks and num_weeks >= 2:
-                    # OtoFon'daki 'is_desired_trend' mantığı: Haftalık getiriler düşüş trendinde mi?
-                    if all(valid_changes[j] > valid_changes[j+1] for j in range(num_weeks - 1)):
-                        trend_fonlari.append(fon_kodu_completed)
-            except Exception:
-                continue # Hata durumunda bu fonu atla
-
-    print(f"--- Trend Filtrelemesi Tamamlandı. {len(trend_fonlari)} adet uygun fon bulundu. ---")
-    return trend_fonlari
-
-
-# --- Fonaliz - ANA ANALİZ FONKSİYONLARI ---
+MANUAL_FON_KODLARI = [
+    "DKR", "ESP", "AOJ", "SBH", "PPH", "KOT", "FD1", "PP1", "KHC", "PBN",
+    "AEV", "YAS", "OTM", "DTL", "BID", "BDY", "GNH", "HKH", "KHA", "HFI",
+    "KPA", "BV1", "GNS", "DXP", "YHB", "BIH", "OHK", "MTK", "HJB", "KPH",
+    "BFT", "AES", "TZD", "FCK", "GOH", "IHT", "POS", "RDF", "KUA", "FRC",
+    "GKF", "FDG", "MD2", "TI3", "MD1", "ICH", "MTH", "NNF", "HMS", "ICF",
+    "RPD", "RTP", "GO3", "FBC", "GO4", "JUP", "IAE", "BUL", "IFN", "TPV",
+    "BTZ", "THD", "TGA", "HNC", "YLY", "IHK", "BVM", "GO1", "HGM", "ZJL",
+    "TKF", "TI2", "HMC", "BIO", "YFV", "GPF", "ACD", "RIK", "HMG", "HVK",
+    "PGS", "KHT", "HKG", "MGB", "PGD", "KLH", "RTH", "YPV", "EKF", "KTN",
+    "UNT", "MPK", "IV8", "RKS", "MPF", "IAT", "DBK", "OPD", "RKH", "NJY",
+    "DBZ", "YCK", "PPM", "KSV", "KLU", "AC5", "RBV", "NSH", "MUT", "VMV",
+    "DID", "DDA", "TPF", "BHI", "OTK", "HDK", "KIA", "DPK", "HIM", "SHE",
+    "MCU", "IML", "ICS", "KIH", "DKL", "HML", "MAD", "YZK", "CKF", "NKA",
+    "TMM", "IDH", "RD1", "KMF", "OJK", "NJF", "PAF", "MKG", "HBF", "NAU",
+    "OGD", "YNK", "GOL", "PKF", "KZU", "TTA", "RPG", "TCA", "DBA", "AFO",
+    "YKT", "GGK", "ONE"
+]
 
 def get_last_business_day():
     today = datetime.now()
@@ -121,20 +42,24 @@ def get_last_business_day():
     return today - timedelta(days=1)
 
 def get_fon_verileri_parallel(args):
-    fon_kodu, start_date, end_date = args
-    print(f"'{fon_kodu}' için detaylı analiz verisi çekiliyor...")
+    fon_kodu, start_date, end_date, bekleme_suresi = args
+    print(f"'{fon_kodu}' için veri çekiliyor...")
     try:
+        if bekleme_suresi > 0:
+            time.sleep(random.uniform(bekleme_suresi, bekleme_suresi + 1.5))
+        
         crawler = Crawler()
         df = crawler.fetch(start=start_date, end=end_date, name=fon_kodu,
-                           columns=["date", "price", "market_cap", "number_of_investors", "title"])
+                            columns=["date", "price", "market_cap", "number_of_investors", "title"])
         if df.empty:
-            return fon_kodu, None, None
+            return fon_kodu, None, "Veri bulunamadı"
         df['date'] = pd.to_datetime(df['date'])
         fon_adi = df['title'].iloc[0] if not df.empty else fon_kodu
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
     except Exception as e:
-        print(f"HATA: '{fon_kodu}' verisi çekilirken bir sorun oluştu: {e}")
-        return fon_kodu, None, None
+        error_message = str(e)
+        print(f"HATA: '{fon_kodu}' verisi çekilirken bir sorun oluştu: {error_message}")
+        return fon_kodu, None, error_message
 
 def hesapla_metrikler(df_fon_fiyat):
     if df_fon_fiyat is None or len(df_fon_fiyat) < 10: return None
@@ -163,116 +88,140 @@ def hesapla_metrikler(df_fon_fiyat):
 def analyze_daily_correlations(df_fon_data, fon_kodu):
     if df_fon_data is None or df_fon_data.empty:
         return None, 0
-
     df = df_fon_data.copy()
     df['investor_change'] = df['number_of_investors'].diff()
     df['market_cap_pct_change'] = df['market_cap'].pct_change()
     df['price_pct_change'] = df['price'].pct_change()
-
     market_cap_change_threshold = 0.005
     price_change_threshold = 0.005
     weights = {'same_day_price': 0.4, 'same_day_market_cap': 0.3, 'next_day_price': 0.2, 'next_day_market_cap': 0.1}
-
     df['market_cap_pct_change_next_day'] = df['market_cap_pct_change'].shift(-1)
     df['price_pct_change_next_day'] = df['price_pct_change'].shift(-1)
-
     same_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change'] >= market_cap_change_threshold)].shape[0]
     same_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change'] >= price_change_threshold)].shape[0]
     next_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change_next_day'] >= market_cap_change_threshold)].shape[0]
     next_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change_next_day'] >= price_change_threshold)].shape[0]
     total_investor_increases = df[df['investor_change'] > 0].shape[0]
-
     sentiment_score = 0
     if total_investor_increases > 0:
-        weighted_score = (
-            (same_day_positive_price_correlation * weights['same_day_price']) +
-            (same_day_positive_correlation * weights['same_day_market_cap']) +
-            (next_day_positive_price_correlation * weights['next_day_price']) +
-            (next_day_positive_correlation * weights['next_day_market_cap'])
-        )
+        weighted_score = ((same_day_positive_price_correlation * weights['same_day_price']) + (same_day_positive_correlation * weights['same_day_market_cap']) + (next_day_positive_price_correlation * weights['next_day_price']) + (next_day_positive_correlation * weights['next_day_market_cap']))
         max_possible_weighted_score = total_investor_increases * sum(weights.values())
         if max_possible_weighted_score > 0:
             sentiment_score = (weighted_score / max_possible_weighted_score) * 100
-
     print(f"--- {fon_kodu} için Sentiment Analizi ---")
     print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
     print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2):.2f}")
     print("--------------------------------------------------")
+    return {'total_investor_increases': total_investor_increases, 'same_day_market_cap_increase': same_day_positive_correlation, 'same_day_price_increase': same_day_positive_price_correlation, 'next_day_market_cap_increase': next_day_positive_correlation, 'next_day_price_increase': next_day_positive_price_correlation}, round(sentiment_score, 2)
 
-    return {
-        'total_investor_increases': total_investor_increases,
-        'same_day_market_cap_increase': same_day_positive_correlation,
-        'same_day_price_increase': same_day_positive_price_correlation,
-        'next_day_market_cap_increase': next_day_positive_correlation,
-        'next_day_price_increase': next_day_positive_price_correlation
-    }, round(sentiment_score, 2)
-
-def calistir_analiz():
-    """Fon analizini çalıştırır ve sonuçları bir DataFrame olarak döndürür."""
-    # 1. ADIM: OtoFon trend mantığı ile fonları filtrele
-    fon_kodlari_listesi = get_otofon_trend_fonlari(num_weeks=2)
-
-    if not fon_kodlari_listesi:
-        print("\nAnaliz edilecek kriterlere uygun fon bulunamadı. İşlem sonlandırılıyor.")
-        return None, None
-
-    # 2. ADIM: Filtrelenmiş liste ile detaylı analizi çalıştır
-    print(f"\n--- FİLTRELENMİŞ LİSTE İLE DETAYLI ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
-    end_date = get_last_business_day()
-    start_date = end_date - pd.DateOffset(months=ANALIZ_SURESI_AY)
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
-    print(f"Analiz Tarih Aralığı: {start_date_str} -> {end_date_str}")
-
-    tasks = [(fon_kodu, start_date_str, end_date_str) for fon_kodu in fon_kodlari_listesi]
+def tarama_asamasini_calistir(fon_kodlari, max_workers, bekleme_suresi, start_date_str, end_date_str, asama_adi):
+    """Belirtilen fon listesini, verilen parametrelerle tarar."""
     analiz_sonuclari = []
+    basarisiz_fonlar = {}
+    tasks = [(fon_kodu, start_date_str, end_date_str, bekleme_suresi) for fon_kodu in fon_kodlari]
 
-    print(f"\n{len(tasks)} adet fon için detaylı veriler paralel olarak çekiliyor...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    print(f"\n--- {asama_adi} ({len(tasks)} fon) ---")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_fon = {executor.submit(get_fon_verileri_parallel, task): task[0] for task in tasks}
         for future in concurrent.futures.as_completed(future_to_fon):
-            fon_kodu, fon_adi, data = future.result()
-            if data is not None:
-                correlation_results, sentiment_score = analyze_daily_correlations(data, fon_kodu)
+            fon_kodu, fon_adi, data_or_error = future.result()
+            if isinstance(data_or_error, pd.DataFrame):
+                data = data_or_error
+                _, sentiment_score = analyze_daily_correlations(data, fon_kodu)
                 metrikler = hesapla_metrikler(data)
                 if metrikler:
                     sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score}
                     analiz_sonuclari.append(sonuc)
                 else:
-                    print(f"UYARI: '{fon_kodu}' için metrikler hesaplanamadı.")
+                    basarisiz_fonlar[fon_kodu] = "Metrik hesaplanamadı (yetersiz veri)."
             else:
-                print(f"UYARI: '{fon_kodu}' için veri alınamadı.")
+                basarisiz_fonlar[fon_kodu] = data_or_error
+    return analiz_sonuclari, basarisiz_fonlar
 
-    if not analiz_sonuclari:
-        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
-        return None, None
+def main():
+    """Üç aşamalı tarama mantığını yönetir ve sonuçları dosyalar."""
+    end_date = get_last_business_day()
+    start_date = end_date - pd.DateOffset(months=ANALIZ_SURESI_AY)
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
 
-    df_sonuc = pd.DataFrame(analiz_sonuclari)
-    sutun_sirasi = [
-        'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
-        'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)',
-        'Sentiment Puanı'
+    print(f"--- ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
+    print(f"Analiz Tarih Aralığı: {start_date_str} -> {end_date_str}")
+
+    # Aşamaların Parametreleri
+    asama_parametreleri = [
+        {'asama_adi': '1. AŞAMA: Hızlı Tarama', 'max_workers': 10, 'bekleme_suresi': 0},
+        {'asama_adi': '2. AŞAMA: Orta Hızda Tarama', 'max_workers': 5, 'bekleme_suresi': 1.5},
+        {'asama_adi': '3. AŞAMA: Yavaş Tarama', 'max_workers': 2, 'bekleme_suresi': 3.0},
     ]
+
+    tum_sonuclar = []
+    basarisiz_fonlar_listesi = MANUAL_FON_KODLARI
+
+    for asama in asama_parametreleri:
+        if not basarisiz_fonlar_listesi:
+            print(f"\n{asama['asama_adi']} atlanıyor. Önceki aşamada tüm fonlar başarıyla çekildi.")
+            break
+        
+        yeni_sonuclar, yeni_basarisiz_fonlar = tarama_asamasini_calistir(
+            fon_kodlari=basarisiz_fonlar_listesi,
+            max_workers=asama['max_workers'],
+            bekleme_suresi=asama['bekleme_suresi'],
+            start_date_str=start_date_str,
+            end_date_str=end_date_str,
+            asama_adi=asama['asama_adi']
+        )
+        
+        tum_sonuclar.extend(yeni_sonuclar)
+        basarisiz_fonlar_listesi = list(yeni_basarisiz_fonlar.keys())
+
+    # Raporlama
+    if not tum_sonuclar:
+        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
+        return
+
+    df_sonuc = pd.DataFrame(tum_sonuclar)
+    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)', 'Sentiment Puanı']
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
 
-    print("\n--- FON ANALİZ SONUÇLARI ---")
+    print("\n--- BİRLEŞTİRİLMİŞ FON ANALİZ SONUÇLARI ---")
     print(df_sonuc_sirali.to_string())
-    return df_sonuc_sirali, end_date_str
 
-def main():
-    """Script doğrudan çalıştırıldığında analiz yapar ve dosyayı kaydeder."""
-    df_sonuc_sirali, end_date_str = calistir_analiz()
+    excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
+    with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
+        df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
+        worksheet = writer.sheets['Fon Analizi']
+        for i, col in enumerate(df_sonuc_sirali.columns):
+            column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
+            worksheet.set_column(i, i, column_len)
+    print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
 
-    if df_sonuc_sirali is not None:
-        excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
-        with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
-            df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
-            worksheet = writer.sheets['Fon Analizi']
-            for i, col in enumerate(df_sonuc_sirali.columns):
-                column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
-                worksheet.set_column(i, i, column_len)
-        print(f"\nAnaliz sonuçları '{excel_dosya_adi}' dosyasına kaydedildi.")
+    # Özet Raporu
+    toplam_fon_sayisi = len(MANUAL_FON_KODLARI)
+    basarili_fon_sayisi = len(tum_sonuclar)
+    basarisiz_fon_sayisi = len(basarisiz_fonlar_listesi)
+    basarisiz_detaylari = "\n".join([f"- {kod}: {sebep}" for kod, sebep in {k: v for k, v in tarama_asamasini_calistir(basarisiz_fonlar_listesi, 1, 0, start_date_str, end_date_str, 'Final Kontrol')[1].items()}.items()])
+    
+    ozet_metni = f"""
+--- Analiz Özet Raporu ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---
+Toplam Analize Alınan Fon Sayısı: {toplam_fon_sayisi}
+Başarıyla Analiz Edilen Fon Sayısı: {basarili_fon_sayisi}
+Nihai Başarısız Fon Sayısı: {basarisiz_fon_sayisi}
+
+Başarısız Olan Fonlar ve Nedenleri:
+{basarisiz_detaylari if basarisiz_detaylari else 'Tüm fonlar başarıyla işlendi.'}
+
+Olası Genel Hata Nedenleri:
+- TEFAS web sitesi, kısa sürede yapılan çok sayıda isteği engellemek için 'Rate Limiting' (erişim kısıtlaması) uygulamaktadır.
+- Veri çekme işlemi sırasında internet bağlantısı kaynaklı zaman aşımları ('Timeout') yaşanmış olabilir.
+- Listede yer alan bazı fon kodları güncel olmayabilir veya TEFAS platformunda bulunamayabilir.
+"""
+    print(ozet_metni)
+    ozet_dosya_adi = "analiz_ozeti.txt"
+    with open(ozet_dosya_adi, "w", encoding="utf-8") as f:
+        f.write(ozet_metni)
+    print(f"Özet rapor '{ozet_dosya_adi}' dosyasına da kaydedildi.")
 
 if __name__ == '__main__':
     main()
