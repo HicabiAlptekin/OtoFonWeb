@@ -55,9 +55,17 @@ jobs:
           if ls Hisse_Senedi_Fon_Analizi_*.xlsx >/dev/null 2>&1; then
             echo "LOG: Excel dosyası başarıyla oluşturuldu."
             echo "excel_file_exists=true" >> $GITHUB_OUTPUT
+            echo "excel_file=$(ls Hisse_Senedi_Fon_Analizi_*.xlsx)" >> $GITHUB_OUTPUT
           else
             echo "UYARI: Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
             echo "excel_file_exists=false" >> $GITHUB_OUTPUT
+          fi
+          if [ -f analiz_ozeti.txt ]; then
+            echo "LOG: analiz_ozeti.txt bulundu."
+            echo "summary_file_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "UYARI: analiz_ozeti.txt bulunamadı."
+            echo "summary_file_exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Özet Raporunu Artifact Olarak Yükle
@@ -68,22 +76,16 @@ jobs:
           path: analiz_ozeti.txt
           if-no-files-found: warn
 
-      - name: Excel Çıktısını Artifact Olarak Yükle
-        if: steps.check_files.outputs.excel_file_exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Fon_Analiz_Sonuc
-          path: Hisse_Senedi_Fon_Analizi_*.xlsx
-          if-no-files-found: warn
-
       - name: Sürüm Oluştur ve Raporları Yükle
-        if: steps.check_files.outputs.excel_file_exists == 'true'
+        if: steps.check_files.outputs.excel_file_exists == 'true' || steps.check_files.outputs.summary_file_exists == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: analiz-${{ github.run_id }}
           name: "Fon Analizi Raporu - ${{ github.run_id }}"
           files: |
-            Hisse_Senedi_Fon_Analizi_*.xlsx
+            ${{ steps.check_files.outputs.excel_file }}
             analiz_ozeti.txt
           body: |
             ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
+            - Excel dosyası: ${{ steps.check_files.outputs.excel_file_exists == 'true' && steps.check_files.outputs.excel_file || 'Oluşturulmadı' }}
+            - Özet raporu: ${{ steps.check_files.outputs.summary_file_exists == 'true' && 'analiz_ozeti.txt' || 'Oluşturulmadı' }}
