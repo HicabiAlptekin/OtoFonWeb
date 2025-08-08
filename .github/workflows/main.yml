@@ -1,13 +1,15 @@
 name: Fon Analiz Scripti
-
 on:
+  push:
+    branches:
+      - main
   schedule:
-    # Her iş günü Türkiye saati ile 10:45 (UTC 07:45)
-    - cron: '45 7 * * 1-5'
-  workflow_dispatch:
+    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch: # Manuel çalıştırma için
 
 jobs:
-  build:
+  analyze:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,7 +20,7 @@ jobs:
           ref: 'main'
 
       - name: Python 3.12 Kurulumu
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -26,29 +28,57 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
+            echo "LOG: requirements.txt bulunuyor, bağımlılıklar yükleniyor..."
             pip install -r requirements.txt
           else
-            echo "requirements.txt bulunamadı!"
+            echo "HATA: requirements.txt bulunamadı!"
             exit 1
           fi
 
       - name: Analiz Scriptini Çalıştır
-        run: python analiz_script.py
+        run: |
+          echo "LOG: analiz_script.py çalıştırılıyor..."
+          python analiz_script.py
+          echo "LOG: analiz_script.py tamamlandı."
+
+      - name: Dosya Sistemini Kontrol Et
+        if: always()
+        run: |
+          echo "--- İşlem Sonrası Dosyalar Listeleniyor ---"
+          ls -l
+          echo "-------------------------------------------"
 
       - name: Dosyaların Oluştuğunu Kontrol Et
         id: check_files
+        if: always()
         run: |
-          if [ -f "Hisse_Senedi_Fon_Analizi_*.xlsx" ]; then
-            echo "Excel dosyası başarıyla oluşturuldu."
+          if ls Hisse_Senedi_Fon_Analizi_*.xlsx >/dev/null 2>&1; then
+            echo "LOG: Excel dosyası başarıyla oluşturuldu."
             echo "excel_file_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
+            echo "UYARI: Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
             echo "excel_file_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Sürüm Oluştur ve Raporları Yükle
-        uses: softprops/action-gh-release@v1
+      - name: Özet Raporunu Artifact Olarak Yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Analiz_Ozeti
+          path: analiz_ozeti.txt
+          if-no-files-found: warn
+
+      - name: Excel Çıktısını Artifact Olarak Yükle
         if: steps.check_files.outputs.excel_file_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fon_Analiz_Sonuc
+          path: Hisse_Senedi_Fon_Analizi_*.xlsx
+          if-no-files-found: warn
+
+      - name: Sürüm Oluştur ve Raporları Yükle
+        if: steps.check_files.outputs.excel_file_exists == 'true'
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: analiz-${{ github.run_id }}
           name: "Fon Analizi Raporu - ${{ github.run_id }}"
