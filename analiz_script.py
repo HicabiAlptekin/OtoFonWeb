@@ -45,24 +45,40 @@ def get_last_business_day():
     return today - timedelta(days=1)
 
 def get_fon_verileri_parallel(args):
-    """Belirtilen fon için TEFAS'tan verileri çeker."""
+    """Belirtilen fon için TEFAS'tan verileri çeker ve olası hataları tekrar dener."""
     fon_kodu, start_date, end_date, bekleme_suresi = args
-    try:
-        # Sunucu kısıtlamalarını aşmak için rastgele bekleme süresi
-        if bekleme_suresi > 0:
-            time.sleep(random.uniform(bekleme_suresi, bekleme_suresi + 1.5))
-        
-        crawler = Crawler()
-        df = crawler.fetch(start=start_date, end=end_date, name=fon_kodu,
-                            columns=["date", "price", "market_cap", "number_of_investors", "title"])
-        if df.empty:
-            return fon_kodu, None, "Veri bulunamadı"
-        df['date'] = pd.to_datetime(df['date'])
-        fon_adi = df['title'].iloc[0] if not df.empty else fon_kodu
-        return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
-    except Exception as e:
-        error_message = str(e)
-        return fon_kodu, None, error_message
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # Sunucu kısıtlamalarını aşmak için rastgele bekleme süresi
+            if bekleme_suresi > 0:
+                time.sleep(random.uniform(bekleme_suresi, bekleme_suresi + 1.5))
+            
+            crawler = Crawler()
+            df = crawler.fetch(start=start_date, end=end_date, name=fon_kodu,
+                                columns=["date", "price", "market_cap", "number_of_investors", "title"])
+            
+            if df.empty:
+                return fon_kodu, None, "Veri bulunamadı"
+            
+            df['date'] = pd.to_datetime(df['date'])
+            fon_adi = df['title'].iloc[0] if not df.empty else fon_kodu
+            return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
+        except Exception as e:
+            error_message = str(e)
+            print(f"⚠️ Uyarı: '{fon_kodu}' için hata oluştu: {error_message}")
+            if "rate limiting" in error_message or "robot check" in error_message or "timeout" in error_message:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 10 + random.uniform(0, 5)
+                    print(f"🔄 Tekrar deneme... {wait_time:.2f} saniye bekleniyor... (Deneme {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    return fon_kodu, None, f"Veri çekme başarısız. Son deneme de rate-limiting/timeout hatası verdi. Hata: {error_message}"
+            else:
+                return fon_kodu, None, f"Beklenmedik hata: {error_message}"
+    
+    return fon_kodu, None, "Tüm denemeler başarısız oldu."
+
 
 def hesapla_metrikler(df_fon_fiyat):
     """Fon için finansal metrikleri (Sharpe, Sortino vb.) hesaplar."""
@@ -163,8 +179,9 @@ def main():
     print(f"Toplam analize alınacak fon sayısı: {len(MANUAL_FON_KODLARI)}")
 
     # Aşamaların Parametreleri
+    # Kullanıcının isteği üzerine 1. Aşamaya 0.05 saniyelik bir bekleme süresi eklendi.
     asama_parametreleri = [
-        {'asama_adi': '1. AŞAMA: Hızlı Tarama', 'max_workers': 10, 'bekleme_suresi': 0},
+        {'asama_adi': '1. AŞAMA: Hızlı Tarama', 'max_workers': 10, 'bekleme_suresi': 0.05},
         {'asama_adi': '2. AŞAMA: Orta Hızda Tarama', 'max_workers': 5, 'bekleme_suresi': 1.5},
         {'asama_adi': '3. AŞAMA: Yavaş Tarama', 'max_workers': 2, 'bekleme_suresi': 3.0},
     ]
