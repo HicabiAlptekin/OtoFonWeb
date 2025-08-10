@@ -16,24 +16,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 # --- AYARLAR ---
 ANALIZ_SURESI_AY = 3
-MANUAL_FON_KODLARI = [
-    "DKR", "ESP", "AOJ", "SBH", "PPH", "KOT", "FD1", "PP1", "KHC", "PBN",
-    "AEV", "YAS", "OTM", "DTL", "BID", "BDY", "GNH", "HKH", "KHA", "HFI",
-    "KPA", "BV1", "GNS", "DXP", "YHB", "BIH", "OHK", "MTK", "HJB", "KPH",
-    "BFT", "AES", "TZD", "FCK", "GOH", "IHT", "POS", "RDF", "KUA", "FRC",
-    "GKF", "FDG", "MD2", "TI3", "MD1", "ICH", "MTH", "NNF", "HMS", "ICF",
-    "RPD", "RTP", "GO3", "FBC", "GO4", "JUP", "IAE", "BUL", "IFN", "TPV",
-    "BTZ", "THD", "TGA", "HNC", "YLY", "IHK", "BVM", "GO1", "HGM", "ZJL",
-    "TKF", "TI2", "HMC", "BIO", "YFV", "GPF", "ACD", "RIK", "HMG", "HVK",
-    "PGS", "KHT", "HKG", "MGB", "PGD", "KLH", "RTH", "YPV", "EKF", "KTN",
-    "UNT", "MPK", "IV8", "RKS", "MPF", "IAT", "DBK", "OPD", "RKH", "NJY",
-    "DBZ", "YCK", "PPM", "KSV", "KLU", "AC5", "RBV", "NSH", "MUT", "VMV",
-    "DID", "DDA", "TPF", "BHI", "OTK", "HDK", "KIA", "DPK", "HIM", "SHE",
-    "MCU", "IML", "ICS", "KIH", "DKL", "HML", "MAD", "YZK", "CKF", "NKA",
-    "TMM", "IDH", "RD1", "KMF", "OJK", "NJF", "PAF", "MKG", "HBF", "NAU",
-    "OGD", "YNK", "GOL", "PKF", "KZU", "TTA", "RPG", "TCA", "DBA", "AFO",
-    "YKT", "GGK", "ONE"
-]
+MANUAL_FON_KODLARI = ['ACD', 'ACC', 'AEV', 'AHI', 'AN1', 'AOJ', 'ASJ', 'AYA', 'BDS', 'BDY', 'BFT', 'BHA', 'BHL', 'BID', 'BIG', 'BIH', 'BIO', 'BNH', 'BRT', 'BSH', 'BUV', 'BTZ', 'BV1', 'BVM', 'CKL', 'CPU', 'DAH', 'DDA', 'DKH', 'DKR', 'DLD', 'DPT', 'DTL', 'DXP', 'DVT', 'DZE', 'EID', 'ELZ', 'ENJ', 'ESP', 'FBC', 'FCK', 'FD1', 'FDG', 'FID', 'FPH', 'FRC', 'FUA', 'FYD', 'GAE', 'GAF', 'GBJ', 'GBH', 'GIH', 'GKF', 'GKG', 'GKV', 'GL1', 'GMA', 'GMD', 'GMR', 'GNH', 'GNS', 'GO1', 'GO3', 'GO4', 'GO9', 'GOH', 'GTH', 'GTM', 'GTY', 'GZM', 'HBU', 'HFI', 'HGM', 'HGV', 'HIH', 'HJB', 'HKH', 'HKG', 'HKM', 'HKR', 'HMS', 'HNC', 'HRZ', 'HTJ', 'IAE', 'ICC', 'ICF', 'ICH', 'ICV', 'IFN', 'IHA', 'IHK', 'IHP', 'IHT', 'IIE', 'IIH', 'IJB', 'IJC', 'IMB', 'IML', 'IUV', 'IVF', 'IYB', 'JUP', 'KHA', 'KHB', 'KHC', 'KLH', 'KPC', 'KOT', 'KPA', 'KRF', 'KST', 'KUA', 'KYA', 'KVT', 'LLA', 'MAC', 'MD2', 'MD1', 'MGB', 'MHF', 'MMH', 'MPS', 'MTH', 'MTK', 'MTX', 'NHY', 'NNF', 'NPH', 'NRC', 'OHK', 'OIL', 'OMG', 'OPF', 'OPH', 'OPI', 'ORC', 'OTM', 'PAO', 'PBI', 'PBN', 'PGS', 'PHI', 'PHK', 'PMP', 'POS', 'PP1', 'PPB', 'PPH', 'PTO', 'RBH', 'RDF', 'RHS', 'RIK', 'RPD', 'RPI', 'RTP', 'SBH', 'RTH', 'SKO', 'SNY', 'SRL', 'ST1', 'SSS', 'SVB', 'TCD', 'TEJ', 'TGA', 'TIE', 'TKF', 'TLH', 'TLZ', 'TPV', 'TTL', 'TZD', 'YAS', 'YAY', 'YBR', 'YBH', 'YDP', 'YEF', 'YFV', 'YHB', 'YHS', 'YLE', 'YLY', 'YPC', 'YPR', 'YTD', 'YUB', 'ZCD', 'ZJB', 'ZJI', 'ZHH', 'ZLH']
 
 def get_last_business_day():
     print("LOG: Son iş günü hesaplanıyor...")
