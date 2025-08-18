@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 tefas-crawler
 gspread
 google-auth-oauthlib

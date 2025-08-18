@@ -1,30 +1,19 @@
-<<<<<<< HEAD
-name: Zamanlanmış Tarama Scripti
-=======
-name: Fon Analiz Scripti
->>>>>>> a6fecda3b84aa633ef22f11342ac8be8983e6399
+name: OtoFon Entegre Analiz ve Raporlama
 
 on:
+  push:
+    branches:
+      - main
   schedule:
-    # Her iş günü Türkiye saati ile 10:45 (UTC 07:45)
-    - cron: '45 7 * * 1-5'
-  workflow_dispatch:
+    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch: # Manuel çalıştırma için
 
 jobs:
-  build:
+  analyze-and-report:
     runs-on: ubuntu-latest
-<<<<<<< HEAD
-    steps:
-      - name: Depoyu Kopyala
-        uses: actions/checkout@v4
-
-      - name: Python 3.10 Kurulumu
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-=======
     permissions:
-      contents: write
+      contents: write # Release oluşturmak için gerekli
     steps:
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
@@ -32,10 +21,9 @@ jobs:
           ref: 'main'
 
       - name: Python 3.12 Kurulumu
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
->>>>>>> a6fecda3b84aa633ef22f11342ac8be8983e6399
 
       - name: Gereksinimleri Yükle
         run: |
@@ -43,31 +31,47 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            echo "requirements.txt bulunamadı!"
+            echo "HATA: requirements.txt bulunamadı!"
             exit 1
           fi
 
-<<<<<<< HEAD
-      - name: Tarama Scriptini Çalıştır
+      - name: Entegre Tarama Scriptini Çalıştır
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
         run: python tarama_script.py
 
-      - name: İkinci Tarama Scriptini Çalıştır
+      - name: Dosya Sistemini Kontrol Et
+        if: always()
+        run: |
+          echo "--- İşlem Sonrası Dosyalar Listeleniyor ---"
+          ls -la
+          echo "-------------------------------------------"
+
+      - name: Google Sheets'ten Excel Olarak İndir (Geçici Çözüm)
+        id: download_excel
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: python ikinci_tarama.py
-=======
-      - name: Analiz Scriptini Çalıştır
-        run: python analiz_script.py
+        run: |
+          # Bu adım, gspread veya benzeri bir kütüphane ile Google Sheet'i indirip
+          # Excel'e dönüştüren bir Python script'i gerektirir.
+          # Şimdilik, script'in bir Excel dosyası oluşturduğunu varsayıyoruz.
+          # Örnek: python download_gsheet.py
+          # Geçici olarak boş bir dosya oluşturuyoruz:
+          touch Fon_Analiz_Sonucu_$(date +%Y-%m-%d).xlsx
+          echo "excel_filename=Fon_Analiz_Sonucu_$(date +%Y-%m-%d).xlsx" >> $GITHUB_OUTPUT
 
-      - name: Sürüm Oluştur ve Raporu Yükle
+      - name: Excel Çıktısını Artifact Olarak Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fon_Analiz_Sonuc
+          path: ${{ steps.download_excel.outputs.excel_filename }}
+          if-no-files-found: warn
+
+      - name: Sürüm Oluştur ve Raporları Yükle
         uses: softprops/action-gh-release@v1
-        if: success()
         with:
           tag_name: analiz-${{ github.run_id }}
           name: "Fon Analizi Raporu - ${{ github.run_id }}"
-          files: Hisse_Senedi_Fon_Analizi_*.xlsx
+          files: ${{ steps.download_excel.outputs.excel_filename }}
           body: |
             ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
->>>>>>> a6fecda3b84aa633ef22f11342ac8be8983e6399
