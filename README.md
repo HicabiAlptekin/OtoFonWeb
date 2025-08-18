@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# OtoFon
-Tefas fon tarama
-=======
 # Fonaliz - Otomatik Fon Analiz Aracı
 
 Bu proje, TEFAS'ta işlem gören ve portföyünün en az %80'i hisse senetlerinden oluşan "Hisse Senedi Yoğun Fonları" otomatik olarak tespit eder ve bu fonlar için detaylı bir performans analizi yapar.
@@ -42,4 +38,3 @@ python analiz_script.py
 ```
 
 Script çalıştığında, analiz sonuçlarını içeren `Hisse_Senedi_Fon_Analizi_YYYY-AA-GG.xlsx` adında bir Excel dosyası oluşturacaktır.
->>>>>>> a6fecda3b84aa633ef22f11342ac8be8983e6399
