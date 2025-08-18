@@ -1,16 +1,5 @@
-# -*- coding: utf-8 -*-
-tefas-crawler
-gspread
-google-auth-oauthlib
-google-auth-httplib2
 pandas
-python-dateutil
-pytz
 numpy
-tqdm
-openpyxl
+tefas-crawler
 xlsxwriter
-torch
-transformers
 requests
-beautifulsoup4
