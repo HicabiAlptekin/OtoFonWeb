@@ -1,5 +1,4 @@
-name: OtoFon Entegre Analiz ve Raporlama
-
+name: Fon Analiz Scripti
 on:
   push:
     branches:
@@ -10,10 +9,10 @@ on:
   workflow_dispatch: # Manuel çalıştırma için
 
 jobs:
-  analyze-and-report:
+  analyze:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Release oluşturmak için gerekli
+      contents: write
     steps:
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
@@ -29,49 +28,62 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
+            echo "LOG: requirements.txt bulunuyor, bağımlılıklar yükleniyor..."
             pip install -r requirements.txt
           else
             echo "HATA: requirements.txt bulunamadı!"
             exit 1
           fi
 
-      - name: Entegre Tarama Scriptini Çalıştır
-        env:
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: python tarama_script.py
+      - name: Analiz Scriptini Çalıştır
+        run: |
+          echo "LOG: analiz_script.py çalıştırılıyor..."
+          python analiz_script.py
+          echo "LOG: analiz_script.py tamamlandı."
 
       - name: Dosya Sistemini Kontrol Et
         if: always()
         run: |
           echo "--- İşlem Sonrası Dosyalar Listeleniyor ---"
-          ls -la
+          ls -l
           echo "-------------------------------------------"
 
-      - name: Google Sheets'ten Excel Olarak İndir (Geçici Çözüm)
-        id: download_excel
-        env:
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+      - name: Dosyaların Oluştuğunu Kontrol Et
+        id: check_files
+        if: always()
         run: |
-          # Bu adım, gspread veya benzeri bir kütüphane ile Google Sheet'i indirip
-          # Excel'e dönüştüren bir Python script'i gerektirir.
-          # Şimdilik, script'in bir Excel dosyası oluşturduğunu varsayıyoruz.
-          # Örnek: python download_gsheet.py
-          # Geçici olarak boş bir dosya oluşturuyoruz:
-          touch Fon_Analiz_Sonucu_$(date +%Y-%m-%d).xlsx
-          echo "excel_filename=Fon_Analiz_Sonucu_$(date +%Y-%m-%d).xlsx" >> $GITHUB_OUTPUT
+          if ls Hisse_Senedi_Fon_Analizi_*.xlsx >/dev/null 2>&1; then
+            echo "LOG: Excel dosyası başarıyla oluşturuldu."
+            echo "excel_file_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "UYARI: Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
+            echo "excel_file_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Özet Raporunu Artifact Olarak Yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Analiz_Ozeti
+          path: analiz_ozeti.txt
+          if-no-files-found: warn
 
       - name: Excel Çıktısını Artifact Olarak Yükle
+        if: steps.check_files.outputs.excel_file_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Fon_Analiz_Sonuc
-          path: ${{ steps.download_excel.outputs.excel_filename }}
+          path: Hisse_Senedi_Fon_Analizi_*.xlsx
           if-no-files-found: warn
 
       - name: Sürüm Oluştur ve Raporları Yükle
+        if: steps.check_files.outputs.excel_file_exists == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: analiz-${{ github.run_id }}
           name: "Fon Analizi Raporu - ${{ github.run_id }}"
-          files: ${{ steps.download_excel.outputs.excel_filename }}
+          files: |
+            Hisse_Senedi_Fon_Analizi_*.xlsx
+            analiz_ozeti.txt
           body: |
             ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
