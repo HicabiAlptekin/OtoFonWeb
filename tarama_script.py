@@ -17,6 +17,11 @@ from tqdm import tqdm
 import concurrent.futures
 import traceback
 import warnings
+# Duygu Analizi için eklenen kütüphaneler
+import requests
+from bs4 import BeautifulSoup
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 warnings.filterwarnings('ignore')
 
@@ -28,6 +33,18 @@ WORKSHEET_NAME_WEEKLY = 'haftalık'
 WORKSHEET_NAME_FONALIZ = 'Fonanaliz' # Yeni çalışma sayfası adı
 TIMEZONE = pytz.timezone('Europe/Istanbul')
 MAX_WORKERS = 10
+
+# --- Duygu Analizi Modeli ---
+try:
+    print("Duygu analizi modeli ve tokenizer yükleniyor...")
+    MODEL_NAME = "savasy/bert-base-turkish-sentiment-cased"
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    print("✅ Duygu analizi modeli başarıyla yüklendi.")
+except Exception as e:
+    print(f"❌ Duygu analizi modeli yüklenirken hata oluştu: {e}")
+    tokenizer = None
+    model = None
 
 # --- Yardımcı Fonksiyonlar ---
 def google_sheets_auth():
@@ -97,8 +114,41 @@ def fetch_data_for_fund_parallel(args):
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.date
         fon_adi = df['title'].iloc[0] if not df.empty and 'title' in df.columns else fon_kodu
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
-    except Exception:
+    except Exception as e:
+        print(f"\n❌ Hata: Fon '{fon_kodu}' için veri çekilemedi. Detay: {e}")
         return fon_kodu, None, None
+
+# --- DUYGU ANALİZİ BÖLÜMÜ ---
+def get_kap_news(fon_kodu):
+    try:
+        url = f"https://www.kap.org.tr/tr/fon-bilgileri/genel/{fon_kodu}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        news_items = soup.select('div.w-col.w-col-11 a')
+        return [item.text.strip() for item in news_items[:5]] # Son 5 haberi al
+    except requests.exceptions.RequestException as e:
+        # print(f"KAP Haberleri alınamadı ({fon_kodu}): {e}")
+        return []
+
+def analyze_sentiment(texts, tokenizer, model):
+    if not texts or tokenizer is None or model is None:
+        return {'label': 'N/A', 'score': 0.0}
+    
+    try:
+        inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        outputs = model(**inputs)
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        
+        # Ortalama skoru hesapla
+        avg_prob = probs.mean(dim=0)
+        sentiment_label = model.config.id2label[avg_prob.argmax().item()]
+        sentiment_score = avg_prob.max().item()
+        
+        return {'label': sentiment_label, 'score': round(sentiment_score, 2)}
+    except Exception:
+        return {'label': 'Hata', 'score': 0.0}
 
 # --- FONALİZ BÖLÜMÜ ---
 def hesapla_metrikler(df_fon_fiyat):
@@ -127,7 +177,7 @@ def hesapla_metrikler(df_fon_fiyat):
 
 def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
     print("\n" + "="*40)
-    print("     AŞAMA 2: FONALİZ RİSK ANALİZİ BAŞLATILIYOR")
+    print("     AŞAMA 2: FONALİZ RİSK VE DUYGU ANALİZİ BAŞLATILIYOR")
     print(f"     {len(fon_listesi)} adet filtrelenmiş fon analiz edilecek...")
     print("="*40)
     
@@ -144,14 +194,24 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, task): task[0] for task in tasks}
-        progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon), total=len(tasks), desc=" Fonaliz Risk Analizi")
+        progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon), total=len(tasks), desc=" Fonaliz Risk ve Duygu Analizi")
 
         for future in progress_bar:
             fon_kodu, fon_adi, data = future.result()
             if data is not None:
                 metrikler = hesapla_metrikler(data)
                 if metrikler:
-                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler}
+                    # Duygu Analizi Entegrasyonu
+                    haberler = get_kap_news(fon_kodu)
+                    duygu_sonucu = analyze_sentiment(haberler, tokenizer, model)
+                    
+                    sonuc = {
+                        'Fon Kodu': fon_kodu, 
+                        'Fon Adı': fon_adi, 
+                        **metrikler,
+                        'Duygu Etiketi': duygu_sonucu['label'],
+                        'Duygu Skoru': duygu_sonucu['score']
+                    }
                     analiz_sonuclari.append(sonuc)
 
     if not analiz_sonuclari:
@@ -159,7 +219,11 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
         return
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
-    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)']
+    sutun_sirasi = [
+        'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 
+        'Duygu Etiketi', 'Duygu Skoru', # Yeni sütunlar
+        'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)'
+    ]
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
 
@@ -169,7 +233,7 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
         try:
             worksheet = spreadsheet.worksheet(WORKSHEET_NAME_FONALIZ)
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_FONALIZ, rows="1000", cols=20)
+            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_FONALIZ, rows="1000", cols=30) # Sütun sayısı artırıldı
         
         worksheet.clear()
         df_sonuc_sirali = df_sonuc_sirali.replace([np.inf, -np.inf], np.nan).fillna('')
@@ -259,3 +323,5 @@ if __name__ == "__main__":
     run_fonaliz_scan_to_gsheets(filtrelenmis_fon_listesi, gc_auth)
 
     print("\n--- Tüm işlemler tamamlandı ---")
+        
+    print("\nScript başarıyla tamamlandı.")

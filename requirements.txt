@@ -9,3 +9,7 @@ numpy
 tqdm
 openpyxl
 xlsxwriter
+torch
+transformers
+requests
+beautifulsoup4
