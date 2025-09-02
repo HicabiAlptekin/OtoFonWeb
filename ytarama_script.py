@@ -62,16 +62,49 @@ except Exception as e:
     print(f"TEFAS Crawler başlatılırken hata: {e}")
     tefas_crawler_global = None
 
+# --- GÜNCELLENMİŞ FONKSİYON ---
+# Bu fonksiyon, fon listesini artık bir metin dosyasına yazacak şekilde güncellenmiştir.
 def load_takasbank_fund_list():
-    print(f"Takasbank'tan güncel fon listesi yükleniyor...")
+    """
+    Takasbank'tan güncel fon listesini yükler ve detayları 
+    'taranan_fon_listesi.txt' adlı dosyaya yazar.
+    """
+    OUTPUT_FILENAME = "taranan_fon_listesi.txt"
+    print(f"\n--- Fon Kaynağı Bilgisi ---")
+    print(f"ℹ️ Fon listesi şu adresten çekiliyor: {TAKASBANK_EXCEL_URL}")
     try:
         df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
         df_data = df_excel[['Fon Adı', 'Fon Kodu']].copy()
         df_data['Fon Kodu'] = df_data['Fon Kodu'].astype(str).str.strip().str.upper()
         df_data.dropna(subset=['Fon Kodu'], inplace=True)
         df_data = df_data[df_data['Fon Kodu'] != '']
-        print(f"✅ {len(df_data)} adet fon bilgisi okundu.")
+        
+        # --- GÜNCELLENEN BÖLÜM ---
+        # Bilgilendirme artık konsol yerine metin dosyasına yazılıyor.
+        if not df_data.empty:
+            try:
+                # UTF-8 encoding ile Türkçe karakter sorunlarının önüne geçilir.
+                with open(OUTPUT_FILENAME, 'w', encoding='utf-8') as f:
+                    f.write(f"--- Fon Tarama Raporu ---\n")
+                    f.write(f"Kaynak URL: {TAKASBANK_EXCEL_URL}\n")
+                    f.write(f"Rapor Tarihi: {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                    f.write(f"Toplam {len(df_data)} adet fon bulundu.\n")
+                    f.write("---------------------------------\n\n")
+                    f.write("--- Bulunan Fonların Listesi ---\n")
+                    
+                    for index, row in df_data.iterrows():
+                        f.write(f"- {row['Fon Kodu']} ({row['Fon Adı']})\n")
+                
+                print(f"✅ Toplam {len(df_data)} adet fon bulundu ve listesi '{OUTPUT_FILENAME}' dosyasına başarıyla yazıldı.")
+
+            except Exception as e:
+                print(f"❌ Hata: Fon listesi '{OUTPUT_FILENAME}' dosyasına yazılırken bir sorun oluştu: {e}")
+        else:
+            print("⚠️ Takasbank'tan herhangi bir fon bilgisi okunamadı.")
+        # --- GÜNCELLENEN BÖLÜM SONU ---
+            
         return df_data
+        
     except Exception as e:
         print(f"❌ Takasbank Excel yükleme hatası: {e}")
         return pd.DataFrame()
@@ -168,29 +201,18 @@ def hesapla_metrikler(df_fon_fiyat):
     df_fon_fiyat = df_fon_fiyat.dropna()
     if df_fon_fiyat.empty: return None
 
-    # Getiri hesaplamasında sadece ilk ve son fiyatı kullanarak daha doğru bir yıllık getiri yakala
-    # (Günlük getirilerin çarpımı olarak da yapılabilir ama bu daha basit)
     getiri = (df_fon_fiyat['price'].iloc[-1] / df_fon_fiyat['price'].iloc[0]) - 1
-
-    # Yıllık volatilite
-    volatilite = df_fon_fiyat['daily_return'].std() * np.sqrt(252) # 252 iş günü varsayımı
-    
-    # Ortalama günlük getiri (risksiz faiz oranı sıfır kabul edilerek)
+    volatilite = df_fon_fiyat['daily_return'].std() * np.sqrt(252)
     ortalama_gunluk_getiri = df_fon_fiyat['daily_return'].mean()
-
-    # Sharpe Oranı
     sharpe_orani = (ortalama_gunluk_getiri / df_fon_fiyat['daily_return'].std()) * np.sqrt(252) if df_fon_fiyat['daily_return'].std() != 0 else 0
     
-    # Sortino Oranı
     negatif_getiriler = df_fon_fiyat[df_fon_fiyat['daily_return'] < 0]['daily_return']
     if negatif_getiriler.empty or negatif_getiriler.std() == 0:
         sortino_orani = 0
     else:
         downside_deviation = negatif_getiriler.std() * np.sqrt(252)
-        # Yıllıklandırılmış ortalama getiri kullanıldı
         sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
     
-    # Piyasa değeri ve yatırımcı sayısı son günkü veriler
     piyasa_degeri = df_fon_fiyat['market_cap'].iloc[-1] if 'market_cap' in df_fon_fiyat.columns else np.nan
     yatirimci_sayisi = df_fon_fiyat['number_of_investors'].iloc[-1] if 'number_of_investors' in df_fon_fiyat.columns else np.nan
 
@@ -208,21 +230,18 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
     Verilen fon listesi için Fonaliz metriklerini hesaplar ve Google Sheets'e yazar.
     """
     print("\n" + "="*40)
-    print("     AŞAMA 3: FONALİZ RİSK ANALİZİ BAŞLATILIYOR")
-    print(f"     {len(fon_listesi)} adet filtrelenmiş fon analiz edilecek...")
+    print("      AŞAMA 3: FONALİZ RİSK ANALİZİ BAŞLATILIYOR")
+    print(f"      {len(fon_listesi)} adet filtrelenmiş fon analiz edilecek...")
     print("="*40)
     
     if not fon_listesi:
         print("ℹ️ Fonaliz için filtreden geçen fon bulunamadı. İşlem atlanıyor.")
         return
 
-    ANALIZ_SURESI_AY = 3 # Son 3 aylık veriler analiz edilecek
+    ANALIZ_SURESI_AY = 3
     end_date = datetime.now(TIMEZONE).date()
-    # Fonaliz için 3 ay + ek tampon (TEFAS_CHUNK_DAYS kadar) geriye dönük veri çekiyoruz.
-    # Bu, ilk birkaç günün eksik gelmesi veya API hatalarından korunmak için.
     start_date = end_date - pd.DateOffset(months=ANALIZ_SURESI_AY) - timedelta(days=TEFAS_CHUNK_DAYS)
     
-    # Fonaliz için FONALIZ_TEFAS_COLS sütunlarını istiyoruz
     tasks = [(fon_kodu, start_date, end_date, FONALIZ_TEFAS_COLS) for fon_kodu in fon_listesi]
     analiz_sonuclari = []
 
@@ -237,8 +256,6 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
                 if metrikler:
                     sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler}
                     analiz_sonuclari.append(sonuc)
-            #else:
-                #print(f"DEBUG: {fon_kodu} için Fonaliz verisi bulunamadı veya yetersiz.")
 
     if not analiz_sonuclari:
         print("\n--- SONUÇ: Fonaliz için analiz edilecek yeterli veri bulunamadı. ---")
@@ -246,7 +263,6 @@ def run_fonaliz_scan_to_gsheets(fon_listesi: list, gc):
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
     sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)']
-    # Sadece var olan sütunları al
     sutun_sirasi = [col for col in sutun_sirasi if col in df_sonuc.columns]
     
     df_sonuc = df_sonuc[sutun_sirasi]
@@ -281,37 +297,32 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
 
     if all_fon_data_df.empty:
         print("❌ Taranacak fon listesi alınamadı. İşlem durduruldu.")
-        return pd.DataFrame() # Boş DataFrame döndür
+        return pd.DataFrame()
 
     print(f"\n" + "="*40)
-    print(f"     AŞAMA 2: HAFTALIK TARAMA BAŞLATILIYOR | {num_weeks} Hafta Geriye Dönük")
+    print(f"      AŞAMA 2: HAFTALIK TARAMA BAŞLATILIYOR | {num_weeks} Hafta Geriye Dönük")
     print("="*40)
 
     total_fon_count = len(all_fon_data_df)
-    # Haftalık tarama için gerekli olan en eski tarihi belirle.
-    # num_weeks * 7 + 21 (ek tampon) gün kadar geriye gidiyoruz.
     genel_veri_cekme_baslangic_tarihi = today - timedelta(days=(num_weeks * 7) + 21 + TEFAS_CHUNK_DAYS) 
     
-    # Haftalık tarama için DEFAULT_TEFAS_COLS sütunlarını istiyoruz
     fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, today, DEFAULT_TEFAS_COLS)
-                      for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
+                         for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
 
     weekly_results_dict = {}
     first_fund_calculated_columns = []
     first_fund_processed = False
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # fetch_data_for_fund_parallel şimdi fon_kodu, fon_adi, df_data döndürüyor
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, args): args[0] for args in fon_args_list}
         progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon),
-                              total=total_fon_count,
-                              desc=" Haftalık Fonları Tarıyor")
+                                  total=total_fon_count,
+                                  desc=" Haftalık Fonları Tarıyor")
 
         for future in progress_bar:
             fon_kodu_completed, fon_adi_fetched, fund_history = future.result()
             try:
                 if fund_history is None or fund_history.empty:
-                    #print(f"DEBUG: {fon_kodu_completed} için haftalık tarama verisi bulunamadı veya yetersiz.")
                     continue
 
                 current_fon_data = {'Fon Kodu': fon_kodu_completed, 'Fon Adı': fon_adi_fetched if fon_adi_fetched else fon_kodu_completed}
@@ -327,7 +338,6 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                     if i == 0: first_week_end_price = price_end
                     if i == num_weeks - 1: last_week_start_price = price_start
 
-                    # Sütun adı formatını güncelleyelim: DD.MM-DD.MM.YY
                     col_name = f"{current_week_end_date_cal.day:02d}.{current_week_start_date_cal.month:02d}-{current_week_end_date_cal.day:02d}.{current_week_end_date_cal.month:02d}.{current_week_end_date_cal.year % 100:02d}"
                     weekly_change = calculate_change(price_end, price_start)
                     current_fon_data[col_name] = weekly_change
@@ -343,13 +353,10 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
                 is_desired_trend = False
                 valid_changes = [chg for chg in weekly_changes_list if not pd.isna(chg)]
 
-                # Yeterli veri varsa ve num_weeks >= 2 ise trend kontrolü yap
                 if len(valid_changes) == num_weeks and num_weeks >= 2:
-                    # Azalan getiri trendi kontrolü (Hafta_1 > Hafta_2 > ...)
                     if all(valid_changes[j] > valid_changes[j+1] for j in range(num_weeks - 1)):
                         is_desired_trend = True
                 
-                # --- DEBUG SÜTUNLARI ---
                 current_fon_data['is_desired_trend'] = bool(is_desired_trend)
                 current_fon_data['_DEBUG_WeeklyChanges_RAW'] = "'" + str([f"{x:.2f}" if not pd.isna(x) else "NaN" for x in weekly_changes_list])
                 current_fon_data['_DEBUG_IsDesiredTrend'] = bool(is_desired_trend)
@@ -361,14 +368,13 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     results_df = pd.DataFrame(list(weekly_results_dict.values()))
 
     if not first_fund_calculated_columns and not results_df.empty:
-        # Eğer ilk fon için hesaplanan sütunlar alınamadıysa, DataFrame'den çek
         temp_row_cols = [col for col in results_df.columns if col not in ['Fon Kodu', 'Fon Adı', 'Değerlendirme', 'is_desired_trend', '_DEBUG_WeeklyChanges_RAW', '_DEBUG_IsDesiredTrend']]
         first_fund_calculated_columns = temp_row_cols if temp_row_cols else []
 
     base_cols = ['Fon Kodu', 'Fon Adı']
     debug_cols = ['_DEBUG_WeeklyChanges_RAW', '_DEBUG_IsDesiredTrend']
     final_view_columns = base_cols + first_fund_calculated_columns + ['Değerlendirme'] + debug_cols
-    all_df_columns = final_view_columns + ['is_desired_trend'] # is_desired_trend Google Sheets'e yazılmıyor ama formatlama için lazım
+    all_df_columns = final_view_columns + ['is_desired_trend']
     existing_cols_for_df = [col for col in all_df_columns if col in results_df.columns]
 
     if not results_df.empty:
@@ -377,7 +383,6 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     else:
         results_df = pd.DataFrame(columns=existing_cols_for_df)
 
-    # float64 ve inf/-inf değerlerini temizle
     for col in results_df.columns:
         if results_df[col].dtype == 'float64':
             results_df[col] = results_df[col].replace([np.inf, -np.inf], np.nan).astype(object).where(pd.notna(results_df[col]), None)
@@ -397,15 +402,13 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
         
         worksheet.clear()
         
-        # Google Sheets'e yazılacak DataFrame'i oluştur (is_desired_trend hariç)
         df_to_gsheets = results_df[[col for col in final_view_columns if col in results_df.columns]]
 
         if not df_to_gsheets.empty:
             worksheet.update(values=[df_to_gsheets.columns.values.tolist()] + df_to_gsheets.values.tolist(), value_input_option='USER_ENTERED')
             
-            # is_desired_trend değeri True olan satırları vurgula
             format_requests = [apply_cell_format_request(worksheet.id, idx + 1, len(df_to_gsheets.columns), True)
-                               for idx, row in results_df.reset_index(drop=True).iterrows() if row.get('is_desired_trend', False)]
+                                   for idx, row in results_df.reset_index(drop=True).iterrows() if row.get('is_desired_trend', False)]
             
             if format_requests:
                 spreadsheet.batch_update({"requests": format_requests})
@@ -422,9 +425,7 @@ def run_weekly_scan_to_gsheets(num_weeks: int, gc):
     
     print(f"--- Haftalık Tarama Bitti. Toplam Süre: {time.time() - start_time_main:.2f} saniye ---")
     
-    # Haftalık tarama sonucunda filtreleyerek Fonaliz için geri dönen fonları döndür
-    # Sadece toplam getirisi >= 2 olan fonları Fonaliz için döndürüyoruz
-    results_df['Toplam_Getiri'] = results_df['Değerlendirme'].fillna(0) # 'Değerlendirme' artık toplam getiri
+    results_df['Toplam_Getiri'] = results_df['Değerlendirme'].fillna(0)
     filtrelenmis_df_fonaliz = results_df[results_df['Toplam_Getiri'] >= 2].copy()
 
     if filtrelenmis_df_fonaliz.empty:
@@ -444,30 +445,27 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
         return pd.DataFrame()
 
     print(f"\n" + "="*40)
-    print(f"     AŞAMA 1: TEKİL TARAMA BAŞLATILIYOR | Bitiş Tarihi: {scan_date.strftime('%d.%m.%Y')}")
+    print(f"      AŞAMA 1: TEKİL TARAMA BAŞLATILIYOR | Bitiş Tarihi: {scan_date.strftime('%d.%m.%Y')}")
     print("="*40)
 
     total_fon_count = len(all_fon_data_df)
-    # Tekil tarama için 1 yıl 2 ay + ek tampon (TEFAS_CHUNK_DAYS kadar) geriye dönük veri çekiyoruz.
     genel_veri_cekme_baslangic_tarihi = scan_date - relativedelta(years=1, months=2) - timedelta(days=TEFAS_CHUNK_DAYS)
     
-    # Tekil tarama için DEFAULT_TEFAS_COLS sütunlarını istiyoruz
     fon_args_list = [(fon_kodu, genel_veri_cekme_baslangic_tarihi, scan_date, DEFAULT_TEFAS_COLS)
-                    for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
+                       for fon_kodu in all_fon_data_df['Fon Kodu'].unique()]
 
     all_results = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, args): args[0] for args in fon_args_list}
         progress_bar = tqdm(concurrent.futures.as_completed(future_to_fon),
-                          total=total_fon_count,
-                          desc=" Tekil Fonları Tarıyor")
+                                  total=total_fon_count,
+                                  desc=" Tekil Fonları Tarıyor")
 
         for future in progress_bar:
             fon_kodu_completed, fon_adi_fetched, fund_history = future.result()
             try:
                 if fund_history is None or fund_history.empty:
-                    #print(f"DEBUG: {fon_kodu_completed} için tekil tarama verisi bulunamadı veya yetersiz.")
                     continue
 
                 fiyat_son = get_price_on_or_before(fund_history, scan_date)
@@ -482,26 +480,97 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
                 
                 if not pd.isna(fiyat_son):
                     for name, period_delta in periods.items():
-                        target_date = scan_date - period_ 
+                        target_date = scan_date - period_delta
+                        fiyat_once = get_price_on_or_before(fund_history, target_date)
+                        degisimler[name] = calculate_change(fiyat_son, fiyat_once)
 
-# --- Yardımcı Fonksiyonlar ---
-...
-def load_takasbank_fund_list():
-    print(f"Takasbank'tan güncel fon listesi yükleniyor...")
+                if any(degisimler.values()):
+                    result_row = {'Fon Kodu': fon_kodu_completed, 'Fon Adı': fon_adi_fetched, **degisimler}
+                    all_results.append(result_row)
+
+            except Exception as e:
+                print(f"❌ Hata (Tekil - {fon_kodu_completed}): {e}")
+                traceback.print_exc()
+
+    if not all_results:
+        print("\n--- SONUÇ: Tekil tarama için veri bulunamadı. ---")
+        return
+
+    results_df = pd.DataFrame(all_results)
+    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Günlük %', 'Haftalık %', '2 Haftalık %', 'Aylık %', '3 Aylık %', '6 Aylık %', '1 Yıllık %']
+    results_df = results_df[sutun_sirasi]
+    results_df_sirali = results_df.sort_values(by='Haftalık %', ascending=False)
+    
+    print(f"\n\n✅ Tekil tarama tamamlandı. Sonuçlar Google Sheets'teki '{WORKSHEET_NAME_MANUAL}' sayfasına yazılıyor...")
     try:
-        df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
-        df_data = df_excel[['Fon Adı', 'Fon Kodu']].copy()
-        df_data['Fon Kodu'] = df_data['Fon Kodu'].astype(str).str.strip().str.upper()
-        df_data.dropna(subset=['Fon Kodu'], inplace=True)
-        df_data = df_data[df_data['Fon Kodu'] != '']
-        print(f"✅ {len(df_data)} adet fon bilgisi okundu.")
-        return df_data
+        spreadsheet = gc.open_by_key(SHEET_ID)
+        try:
+            worksheet = spreadsheet.worksheet(WORKSHEET_NAME_MANUAL)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME_MANUAL, rows="1000", cols=20)
+            
+        worksheet.clear()
+        df_for_gsheet = results_df_sirali.fillna('')
+        worksheet.update([df_for_gsheet.columns.values.tolist()] + df_for_gsheet.values.tolist())
+        
+        body_resize = {"requests": [{"autoResizeDimensions": {"dimensions": {"sheetId": worksheet.id, "dimension": "COLUMNS"}}}]}
+        spreadsheet.batch_update(body_resize)
+        print(f"✅ Google Sheets '{WORKSHEET_NAME_MANUAL}' sayfası güncellendi.")
     except Exception as e:
-        print(f"❌ Takasbank Excel yükleme hatası: {e}")
-        return pd.DataFrame()
+        print(f"❌ Google Sheets'e yazma hatası (Tekil): {e}")
 
-# Aşağıdaki satırlar eklenerek listenin çıktısı alınabilir.
-if __name__ == "__main__":
-    fon_listesi_df = load_takasbank_fund_list()
-    print("\n--- TARANAN FONLARIN LİSTESİ ---")
-    print(fon_listesi_df)
+    print(f"--- Tekil Tarama Bitti. Toplam Süre: {time.time() - start_time_main:.2f} saniye ---")
+
+
+# --- ANA ÇALIŞTIRMA BLOĞU ---
+if __name__ == '__main__':
+    gc_instance = google_sheets_auth()
+    
+    # Komut satırı argümanlarını kontrol et
+    # Örnek kullanım:
+    # python script_adi.py weekly 4 -> 4 haftalık tarama yapar
+    # python script_adi.py single 2023-10-27 -> Belirtilen tarih için tekil tarama
+    # python script_adi.py -> Varsayılan olarak 4 haftalık tarama ve fonaliz yapar
+    
+    scan_type = 'weekly' # Varsayılan tarama tipi
+    if len(sys.argv) > 1:
+        scan_type = sys.argv[1].lower()
+
+    if scan_type == 'single':
+        try:
+            # Tarih argümanı varsa onu kullan, yoksa dünü varsay
+            if len(sys.argv) > 2:
+                scan_date_str = sys.argv[2]
+                scan_date_obj = datetime.strptime(scan_date_str, '%Y-%m-%d').date()
+            else:
+                scan_date_obj = datetime.now(TIMEZONE).date() - timedelta(days=1)
+            
+            run_single_date_scan_to_gsheets(scan_date_obj, gc_instance)
+        except ValueError:
+            print("❌ Hata: Tarih formatı yanlış. Lütfen YYYY-MM-DD formatında girin.")
+        except Exception as e:
+            print(f"❌ Tekil tarama sırasında beklenmedik bir hata oluştu: {e}")
+            traceback.print_exc()
+            
+    elif scan_type == 'weekly':
+        try:
+            # Hafta sayısı argümanı varsa onu kullan, yoksa 4 varsay
+            num_weeks_to_scan = int(sys.argv[2]) if len(sys.argv) > 2 else 4
+            
+            # Haftalık taramayı çalıştır ve Fonaliz için filtrelenmiş fon listesini al
+            fonaliz_icin_fonlar = run_weekly_scan_to_gsheets(num_weeks_to_scan, gc_instance)
+            
+            # Eğer haftalık taramadan dönen listede fon varsa Fonaliz'i çalıştır
+            if fonaliz_icin_fonlar:
+                run_fonaliz_scan_to_gsheets(fonaliz_icin_fonlar, gc_instance)
+            else:
+                print("\nℹ️ Haftalık tarama sonucunda Fonaliz için uygun fon bulunamadı.")
+                
+        except ValueError:
+            print("❌ Hata: Hafta sayısı bir tamsayı olmalıdır.")
+        except Exception as e:
+            print(f"❌ Haftalık tarama sırasında beklenmedik bir hata oluştu: {e}")
+            traceback.print_exc()
+
+    else:
+        print(f"❌ Hata: Geçersiz tarama tipi '{scan_type}'. 'single' veya 'weekly' kullanın.")
