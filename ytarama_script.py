@@ -482,4 +482,26 @@ def run_single_date_scan_to_gsheets(scan_date: date, gc):
                 
                 if not pd.isna(fiyat_son):
                     for name, period_delta in periods.items():
-                        target_date = scan_date - period_
+                        target_date = scan_date - period_ 
+
+# --- Yardımcı Fonksiyonlar ---
+...
+def load_takasbank_fund_list():
+    print(f"Takasbank'tan güncel fon listesi yükleniyor...")
+    try:
+        df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
+        df_data = df_excel[['Fon Adı', 'Fon Kodu']].copy()
+        df_data['Fon Kodu'] = df_data['Fon Kodu'].astype(str).str.strip().str.upper()
+        df_data.dropna(subset=['Fon Kodu'], inplace=True)
+        df_data = df_data[df_data['Fon Kodu'] != '']
+        print(f"✅ {len(df_data)} adet fon bilgisi okundu.")
+        return df_data
+    except Exception as e:
+        print(f"❌ Takasbank Excel yükleme hatası: {e}")
+        return pd.DataFrame()
+
+# Aşağıdaki satırlar eklenerek listenin çıktısı alınabilir.
+if __name__ == "__main__":
+    fon_listesi_df = load_takasbank_fund_list()
+    print("\n--- TARANAN FONLARIN LİSTESİ ---")
+    print(fon_listesi_df)
