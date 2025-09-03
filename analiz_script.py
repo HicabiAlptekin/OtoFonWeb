@@ -1,96 +1,89 @@
-# Fonaliz - Otomatik Fon Analiz Araci
+# -*- coding: utf-8 -*-
+# Fonaliz - Dinamik Fon Analiz Aracı
+# Bu script, 'filtrelenmis_fonlar.txt' dosyasında listelenen fonlar için
+# detaylı risk ve getiri analizi yapar.
+
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from tefas import Crawler
+from datetime import datetime, date
 import time
 import warnings
 import concurrent.futures
 import sys
-import random
+import os
+from tefas import Crawler
+from dateutil.relativedelta import relativedelta
 
-# Deprecation uyarılarını kapat
+# Uyarıları kapat
 warnings.filterwarnings('ignore')
-# Konsol çıktısının Türkçe karakterleri doğru göstermesini sağlar
-sys.stdout.reconfigure(encoding='utf-8')
 
 # --- AYARLAR ---
 ANALIZ_SURESI_AY = 3
-MANUAL_FON_KODLARI = ['AAS', 'AFA', 'AFS', 'AFT', 'AFV', 'AKE', 'ARE', 'ASJ', 'AUV', 'BHA', 'BDS', 'BRF', 'BRT', 'BTE', 'BUY', 'BUV', 'BVM', 'BVV', 'CIN', 'CKF', 'CKL', 'CPT', 'CPU', 'DBH', 'DFC', 'DHM', 'DMG', 'DOH', 'DOV', 'DPB', 'DSD', 'DTL', 'DTZ', 'DVT', 'DXP', 'DYN', 'DZM', 'EID', 'ENJ', 'ESG', 'ESP', 'EUN', 'FBC', 'EUZ', 'FBZ', 'FBV', 'FCK', 'FDG', 'FJB', 'FKE', 'FLS', 'FLY', 'FMG', 'FPG', 'FSH', 'FSR', 'FUB', 'GBC', 'GBG', 'GBV', 'GIH', 'GMC', 'GMR', 'GNH', 'GNS', 'GO3', 'GO4', 'GPG', 'GPT', 'GTZ', 'GUH', 'GUM', 'GVA', 'GZL', 'GZG', 'GZY', 'GZV', 'GZZ', 'HGM', 'HGV', 'HIZ', 'HOA', 'HOY', 'HRZ', 'HVU', 'HTJ', 'IAE', 'IBB', 'ICH', 'IDO', 'IDY', 'IEV', 'IFN', 'IHC', 'IJB', 'IJP', 'IJT', 'IKL', 'IJC', 'IKP', 'IMB', 'IML', 'IPG', 'IOG', 'IPJ', 'IRO', 'IRT', 'IUF', 'IUV', 'ITP', 'IYB', 'IUH', 'IVY', 'IZS', 'KAV', 'KGM', 'KHA', 'KHT', 'KIB', 'KKC', 'KLH', 'KP3', 'KRS', 'KUT', 'KVT', 'KUB', 'KYS', 'MAC', 'MET', 'MGB', 'MHF', 'MJL', 'MJG', 'MPP', 'MRI', 'MTG', 'MTX', 'MTV', 'NHY', 'NME', 'NKP', 'NTI', 'NUB', 'NVZ', 'ODP', 'ODD', 'OJT', 'OLD', 'OLA', 'ONE', 'ONK', 'OPF', 'OTM', 'PBI', 'PBN', 'PIL', 'PMP', 'POS', 'PP1', 'PPE', 'PPH', 'PPS', 'PYR', 'RBL', 'RBN', 'RDF', 'RHI', 'RPD', 'RPS', 'RPM', 'RTD', 'RTG', 'RTH', 'SBH', 'RUT', 'SPE', 'SOS', 'SPR', 'SSK', 'ST1', 'SUC', 'TCC', 'TFF', 'TEJ', 'TGR', 'THF', 'TJF', 'TKF', 'TJT', 'TLH', 'TLY', 'TMG', 'TMZ', 'TPV', 'TPP', 'URA', 'VCY', 'YAY', 'YBE', 'YBR', 'YBH', 'YIT', 'YJK', 'YLC', 'YLO', 'YPC', 'YSO', 'YTD', 'YTY', 'YZG', 'YVG', 'ZFB', 'ZMT', 'ZMY', 'ZP9']
+MAX_WORKERS = 10
+INPUT_FILE = "filtrelenmis_fonlar.txt"
 
-def get_last_business_day():
-    print("LOG: Son iş günü hesaplanıyor...")
-    today = datetime.now()
-    for i in range(7):
-        day_to_check = today - timedelta(days=i)
-        if day_to_check.weekday() < 5:
-            print(f"LOG: Son iş günü bulundu: {day_to_check.strftime('%Y-%m-%d')}")
-            return day_to_check
-    # Fallback
-    fallback_day = today - timedelta(days=1)
-    print(f"LOG: Son iş günü bulunamadı, fallback kullanılıyor: {fallback_day.strftime('%Y-%m-%d')}")
-    return fallback_day
+# --- Yardımcı Fonksiyonlar ---
+def load_filtered_fund_list():
+    """
+    'filtrelenmis_fonlar.txt' dosyasından analiz edilecek fon kodlarının
+    listesini okur.
+    """
+    if not os.path.exists(INPUT_FILE):
+        print(f"HATA: Analiz için fon listesini içeren '{INPUT_FILE}' dosyası bulunamadı.")
+        print("Lütfen önce tarama script'ini çalıştırarak bu dosyayı oluşturun.")
+        sys.exit(1)
+    
+    with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+        fon_kodlari = [line.strip() for line in f if line.strip()]
+        
+    if not fon_kodlari:
+        print(f"UYARI: '{INPUT_FILE}' dosyası boş. Analiz edilecek fon bulunamadı.")
+        sys.exit(0)
+        
+    print(f"'{INPUT_FILE}' dosyasından {len(fon_kodlari)} adet fon kodu okundu.")
+    return fon_kodlari
 
-def get_fon_verileri_parallel(args):
-    fon_kodu, start_date, end_date, bekleme_suresi_araligi = args
-    max_retries = 3
-    print(f"LOG: '{fon_kodu}' için veri çekme işlemi başlatıldı. Tarih aralığı: {start_date} -> {end_date}")
-    for attempt in range(max_retries):
-        try:
-            if bekleme_suresi_araligi:
-                sleep_time = random.uniform(bekleme_suresi_araligi[0], bekleme_suresi_araligi[1])
-                print(f"LOG: '{fon_kodu}' için {sleep_time:.2f} saniye bekleniyor...")
-                time.sleep(sleep_time)
-
-            crawler = Crawler()
-            df = crawler.fetch(
-                start=start_date,
-                end=end_date,
-                name=fon_kodu,
-                columns=["date", "price", "market_cap", "number_of_investors", "title"]
-            )
-
-            if df.empty:
-                print(f"UYARI: '{fon_kodu}' için TEFAS'tan veri bulunamadı.")
-                return fon_kodu, None, "Veri bulunamadı"
-
-            df['date'] = pd.to_datetime(df['date'])
-            fon_adi = df['title'].iloc[0] if not df.empty else fon_kodu
-            print(f"LOG: '{fon_kodu}' ({fon_adi}) için {len(df)} satır veri başarıyla çekildi.")
-            return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
-        except Exception as e:
-            error_message = str(e)
-            print(f"HATA: '{fon_kodu}' verisi çekilirken bir sorun oluştu: {error_message}")
-            if "rate limiting" in error_message.lower() or "robot check" in error_message.lower() or "timeout" in error_message.lower():
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 10 + random.uniform(0, 5)
-                    print(f"LOG: Tekrar deneme... {wait_time:.2f} saniye bekleniyor... (Deneme {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    return fon_kodu, None, f"Veri çekme başarısız. Son deneme de rate-limiting/timeout hatası verdi. Hata: {error_message}"
-            else:
-                return fon_kodu, None, f"Beklenmedik hata: {error_message}"
-    return fon_kodu, None, "Tüm denemeler başarısız oldu."
+def fetch_data_for_fund_parallel(args):
+    """
+    Verilen bir fon kodu için TEFAS'tan paralel olarak veri çeker.
+    """
+    fon_kodu, start_date, end_date = args
+    try:
+        crawler = Crawler()
+        df = crawler.fetch(
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d"),
+            name=fon_kodu,
+            columns=["date", "price", "market_cap", "number_of_investors", "title"]
+        )
+        if df.empty:
+            return fon_kodu, None, None
+        
+        df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.date
+        fon_adi = df['title'].iloc[0] if not df.empty and 'title' in df.columns else fon_kodu
+        return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
+    except Exception as e:
+        print(f"HATA ({fon_kodu}): Veri çekilirken sorun oluştu - {e}")
+        return fon_kodu, None, None
 
 def hesapla_metrikler(df_fon_fiyat):
-    if df_fon_fiyat is None or len(df_fon_fiyat) < 10:
-        print(f"LOG: Metrik hesaplama için yetersiz veri (veri yok veya satır sayısı < 10).")
-        return None
+    """
+    Bir fonun geçmiş fiyat verilerini kullanarak risk/getiri metriklerini hesaplar.
+    """
+    if df_fon_fiyat is None or len(df_fon_fiyat) < 10: return None
     df_fon_fiyat['daily_return'] = df_fon_fiyat['price'].pct_change()
     df_fon_fiyat = df_fon_fiyat.dropna()
-    if df_fon_fiyat.empty:
-        print("LOG: Günlük getiriler hesaplandıktan sonra veri kalmadı.")
-        return None
+    if df_fon_fiyat.empty: return None
+
     getiri = (df_fon_fiyat['price'].iloc[-1] / df_fon_fiyat['price'].iloc[0]) - 1
     volatilite = df_fon_fiyat['daily_return'].std() * np.sqrt(252)
     ortalama_gunluk_getiri = df_fon_fiyat['daily_return'].mean()
     sharpe_orani = (ortalama_gunluk_getiri / df_fon_fiyat['daily_return'].std()) * np.sqrt(252) if df_fon_fiyat['daily_return'].std() != 0 else 0
+    
     negatif_getiriler = df_fon_fiyat[df_fon_fiyat['daily_return'] < 0]['daily_return']
-    if negatif_getiriler.empty or negatif_getiriler.std() == 0:
-        sortino_orani = 0
-    else:
-        downside_deviation = negatif_getiriler.std() * np.sqrt(252)
-        sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
+    downside_deviation = negatif_getiriler.std() * np.sqrt(252) if not negatif_getiriler.empty else 0
+    sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
+        
     return {
         'Getiri (%)': round(getiri * 100, 2),
         'Standart Sapma (Yıllık %)': round(volatilite * 100, 2),
@@ -100,185 +93,59 @@ def hesapla_metrikler(df_fon_fiyat):
         'Yatırımcı Sayısı': df_fon_fiyat['number_of_investors'].iloc[-1]
     }
 
-def analyze_daily_correlations(df_fon_data, fon_kodu):
-    if df_fon_data is None or df_fon_data.empty:
-        print(f"LOG: '{fon_kodu}' için korelasyon analizi yapılamadı: Veri yok veya boş.")
-        return None, 0
-    df = df_fon_data.copy()
-    df['investor_change'] = df['number_of_investors'].diff()
-    df['market_cap_pct_change'] = df['market_cap'].pct_change()
-    df['price_pct_change'] = df['price'].pct_change()
-    market_cap_change_threshold = 0.005
-    price_change_threshold = 0.005
-    weights = {'same_day_price': 0.4, 'same_day_market_cap': 0.3, 'next_day_price': 0.2, 'next_day_market_cap': 0.1}
-    df['market_cap_pct_change_next_day'] = df['market_cap_pct_change'].shift(-1)
-    df['price_pct_change_next_day'] = df['price_pct_change'].shift(-1)
-    same_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change'] >= market_cap_change_threshold)].shape[0]
-    same_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change'] >= price_change_threshold)].shape[0]
-    next_day_positive_correlation = df[(df['investor_change'] > 0) & (df['market_cap_pct_change_next_day'] >= market_cap_change_threshold)].shape[0]
-    next_day_positive_price_correlation = df[(df['investor_change'] > 0) & (df['price_pct_change_next_day'] >= price_change_threshold)].shape[0]
-    total_investor_increases = df[df['investor_change'] > 0].shape[0]
-    sentiment_score = 0
-    if total_investor_increases > 0:
-        weighted_score = (
-            (same_day_positive_price_correlation * weights['same_day_price']) +
-            (same_day_positive_correlation * weights['same_day_market_cap']) +
-            (next_day_positive_price_correlation * weights['next_day_price']) +
-            (next_day_positive_correlation * weights['next_day_market_cap'])
-        )
-        max_possible_weighted_score = total_investor_increases * sum(weights.values())
-        if max_possible_weighted_score > 0:
-            sentiment_score = (weighted_score / max_possible_weighted_score) * 100
+def main():
+    """
+    Ana fonksiyon: fon listesini okur, verileri çeker, analiz eder ve sonucu Excel'e yazar.
+    """
+    print("--- Fonaliz Dinamik Analiz Script'i Başlatıldı ---")
+    start_time = time.time()
     
-    print(f"--- {fon_kodu} için Sentiment Analizi ---")
-    print(f"Toplam yatırımcı artışı olan gün sayısı: {total_investor_increases}")
-    print(f"HESAPLANAN SENTIMENT PUANI: {round(sentiment_score, 2):.2f}")
-    print("--------------------------------------------------")
+    fon_listesi = load_filtered_fund_list()
     
-    return {
-        'total_investor_increases': total_investor_increases,
-        'same_day_market_cap_increase': same_day_positive_correlation,
-        'same_day_price_increase': same_day_positive_price_correlation,
-        'next_day_market_cap_increase': next_day_positive_correlation,
-        'next_day_price_increase': next_day_positive_price_correlation
-    }, round(sentiment_score, 2)
-
-def tarama_asamasini_calistir(fon_kodlari, max_workers, bekleme_suresi_araligi, start_date_str, end_date_str, asama_adi):
-    print(f"\n--- {asama_adi} ({len(fon_kodlari)} adet fon) başlatılıyor ---")
+    end_date = date.today()
+    start_date = end_date - relativedelta(months=ANALIZ_SURESI_AY)
+    
+    tasks = [(fon_kodu, start_date, end_date) for fon_kodu in fon_listesi]
     analiz_sonuclari = []
-    basarisiz_fonlar = {}
-    tasks = [(fon_kodu, start_date_str, end_date_str, bekleme_suresi_araligi) for fon_kodu in fon_kodlari]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_fon = {executor.submit(get_fon_verileri_parallel, task): task[0] for task in tasks}
+    print(f"\n{len(fon_listesi)} adet fon için {start_date.strftime('%Y-%m-%d')} - {end_date.strftime('%Y-%m-%d')} tarih aralığında analiz başlatılıyor...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_fon = {executor.submit(fetch_data_for_fund_parallel, task): task[0] for task in tasks}
         
         for future in concurrent.futures.as_completed(future_to_fon):
-            fon_kodu, fon_adi, data_or_error = future.result()
-            if isinstance(data_or_error, pd.DataFrame):
-                data = data_or_error
-                print(f"LOG: '{fon_kodu}' için metrikler ve sentiment analizi hesaplanıyor.")
-                _, sentiment_score = analyze_daily_correlations(data, fon_kodu)
+            fon_kodu, fon_adi, data = future.result()
+            if data is not None:
                 metrikler = hesapla_metrikler(data)
-                
                 if metrikler:
-                    print(f"LOG: '{fon_kodu}' için metrikler başarıyla hesaplandı.")
-                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler, 'Sentiment Puanı': sentiment_score}
+                    sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler}
                     analiz_sonuclari.append(sonuc)
-                else:
-                    print(f"UYARI: '{fon_kodu}' için metrik hesaplanamadı (yetersiz veri).")
-                    basarisiz_fonlar[fon_kodu] = "Metrik hesaplanamadı (yetersiz veri)."
-            else:
-                print(f"UYARI: '{fon_kodu}' için veri alınamadı. Hata: {data_or_error}")
-                basarisiz_fonlar[fon_kodu] = data_or_error
 
-    print(f"\n--- {asama_adi} tamamlandı ---")
-    print(f"Toplam {len(tasks)} fondan {len(analiz_sonuclari)} tanesi başarıyla işlendi.")
-    print(f"{len(basarisiz_fonlar)} fon başarısız oldu veya atlandı.")
-    return analiz_sonuclari, basarisiz_fonlar
+    if not analiz_sonuclari:
+        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. ---")
+        return
 
-def main():
-    print(f"--- LOG: Script Başlatıldı --- ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
-    end_date = get_last_business_day()
-    start_date = end_date - pd.DateOffset(months=ANALIZ_SURESI_AY)
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
+    df_sonuc = pd.DataFrame(analiz_sonuclari)
+    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)']
+    df_sonuc = df_sonuc[sutun_sirasi]
+    df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
 
-    print(f"--- ANALİZ BAŞLATILDI ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---")
-    print(f"Analiz Tarih Aralığı: {start_date_str} -> {end_date_str}")
-    print(f"Toplam analize alınacak fon sayısı: {len(MANUAL_FON_KODLARI)}")
-
-    asama_parametreleri = [
-        {'asama_adi': '1. AŞAMA: Hızlı Tarama', 'max_workers': 8, 'bekleme_suresi_araligi': (1.0, 2.0)},
-        {'asama_adi': '2. AŞAMA: Orta Hızda Tarama', 'max_workers': 4, 'bekleme_suresi_araligi': (3.0, 5.0)},
-        {'asama_adi': '3. AŞAMA: Yavaş Tarama', 'max_workers': 1, 'bekleme_suresi_araligi': (5.0, 7.0)},
-    ]
-
-    tum_sonuclar = []
-    basarisiz_fonlar_listesi = MANUAL_FON_KODLARI
-    son_basarisiz_dict = {}
-
-    for asama in asama_parametreleri:
-        if not basarisiz_fonlar_listesi:
-            print(f"\nLOG: {asama['asama_adi']} atlanıyor. Önceki aşamada tüm fonlar başarıyla çekildi.")
-            break
-        
-        yeni_sonuclar, son_basarisiz_dict = tarama_asamasini_calistir(
-            fon_kodlari=basarisiz_fonlar_listesi,
-            max_workers=asama['max_workers'],
-            bekleme_suresi_araligi=asama['bekleme_suresi_araligi'],
-            start_date_str=start_date_str,
-            end_date_str=end_date_str,
-            asama_adi=asama['asama_adi']
-        )
-        
-        if asama['asama_adi'] == '1. AŞAMA: Hızlı Tarama' and not yeni_sonuclar:
-            print("\nHATA: İlk aşamada hiçbir fonun verisi çekilemedi. İşlem durduruluyor.")
-            return
-            
-        tum_sonuclar.extend(yeni_sonuclar)
-        basarisiz_fonlar_listesi = list(son_basarisiz_dict.keys())
-
-    print("\n--- LOG: Raporlama Aşaması Başladı ---")
-    if not tum_sonuclar:
-        print("\n--- SONUÇ: Analiz edilecek yeterli veri bulunamadı. Excel dosyası oluşturulmayacak. ---")
-    else:
-        print(f"LOG: {len(tum_sonuclar)} adet fon için sonuç DataFrame'i oluşturuluyor.")
-        df_sonuc = pd.DataFrame(tum_sonuclar)
-        sutun_sirasi = [
-            'Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)',
-            'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)',
-            'Standart Sapma (Yıllık %)', 'Sentiment Puanı'
-        ]
-        df_sonuc = df_sonuc[sutun_sirasi]
-        df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
-
-        print("\n--- BİRLEŞTİRİLMİŞ FON ANALİZ SONUÇLARI ---")
-        print(df_sonuc_sirali.to_string())
-
-        excel_dosya_adi = f"Hisse_Senedi_Fon_Analizi_{end_date_str}.xlsx"
-        print(f"LOG: Sonuçlar Excel dosyasına yazılıyor: '{excel_dosya_adi}'")
-        try:
-            with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
-                df_sonuc_sirali.to_excel(writer, sheet_name='Fon Analizi', index=False)
-                worksheet = writer.sheets['Fon Analizi']
-                for i, col in enumerate(df_sonuc_sirali.columns):
-                    column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
-                    worksheet.set_column(i, i, column_len)
-            print(f"LOG: Analiz sonuçları '{excel_dosya_adi}' dosyasına başarıyla kaydedildi.")
-        except Exception as e:
-            print(f"HATA: Excel dosyası '{excel_dosya_adi}' oluşturulurken bir hata oluştu: {e}")
-
-    print("\n--- LOG: Özet Raporu Oluşturuluyor ---")
-    toplam_fon_sayisi = len(MANUAL_FON_KODLARI)
-    basarili_fon_sayisi = len(tum_sonuclar)
-    nihai_basarisiz_fon_sayisi = len(son_basarisiz_dict)
+    excel_dosya_adi = f"Fonaliz_Sonuclari_{end_date.strftime('%Y-%m-%d')}.xlsx"
+    print(f"\nAnaliz tamamlandı. Sonuçlar '{excel_dosya_adi}' dosyasına yazılıyor...")
     
-    basarisiz_detaylari = "\n".join([f"- {kod}: {sebep}" for kod, sebep in son_basarisiz_dict.items()])
-
-    ozet_metni = f"""
---- Analiz Özet Raporu ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---
-Toplam Analize Alınan Fon Sayısı: {toplam_fon_sayisi}
-Başarıyla Analiz Edilen Fon Sayısı: {basarili_fon_sayisi}
-Nihai Başarısız Fon Sayısı: {nihai_basarisiz_fon_sayisi}
-
-Başarısız Olan Fonlar ve Nedenleri:
-{basarisiz_detaylari if basarisiz_detaylari else 'Tüm fonlar başarıyla işlendi.'}
-
-Olası Genel Hata Nedenleri:
-- TEFAS web sitesi, kısa sürede yapılan çok sayıda isteği engellemek için 'Rate Limiting' (erişim kısıtlaması) uygulamaktadır.
-- Veri çekme işlemi sırasında internet bağlantısı kaynaklı zaman aşımları ('Timeout') yaşanmış olabilir.
-- Listede yer alan bazı fon kodları güncel olmayabilir veya TEFAS platformunda bulunamayabilir.
-"""
-    print(ozet_metni)
-    ozet_dosya_adi = "analiz_ozeti.txt"
     try:
-        with open(ozet_dosya_adi, "w", encoding="utf-8") as f:
-            f.write(ozet_metni)
-        print(f"LOG: Özet rapor '{ozet_dosya_adi}' dosyasına da kaydedildi.")
+        with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
+            df_sonuc_sirali.to_excel(writer, sheet_name='Analiz Sonuclari', index=False)
+            worksheet = writer.sheets['Analiz Sonuclari']
+            for i, col in enumerate(df_sonuc_sirali.columns):
+                column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, column_len)
+        print(f"'{excel_dosya_adi}' dosyası başarıyla oluşturuldu.")
     except Exception as e:
-        print(f"HATA: Özet rapor '{ozet_dosya_adi}' oluşturulurken bir hata oluştu: {e}")
-    
-    print(f"--- LOG: Script Tamamlandı --- ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+        print(f"HATA: Excel dosyası oluşturulurken bir sorun oluştu: {e}")
 
-if __name__ == '__main__':
+    end_time = time.time()
+    print(f"\n--- Tüm işlemler {end_time - start_time:.2f} saniyede tamamlandı ---")
+
+if __name__ == "__main__":
     main()

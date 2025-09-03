@@ -1,89 +1,45 @@
-name: Fon Analiz Scripti
+name: OtoFon Dinamik Analiz
 on:
   push:
     branches:
       - main
   schedule:
-    # Her iş günü Türkiye saati ile 11:00 (UTC 08:00)
-    - cron: '0 8 * * 1-5'
+    # Her iş günü Türkiye saati ile sabah 09:00 (UTC 06:00)
+    - cron: '0 6 * * 1-5'
   workflow_dispatch: # Manuel çalıştırma için
 
 jobs:
-  analyze:
+  build-and-analyze:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Depoyu Kopyala
         uses: actions/checkout@v4
-        with:
-          ref: 'main'
 
-      - name: Python 3.12 Kurulumu
-        uses: actions/setup-python@v5
+      - name: Python 3.10 Kurulumu
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
-      - name: Gereksinimleri Yükle
+      - name: Bağımlılıkları Yükle
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
-            echo "LOG: requirements.txt bulunuyor, bağımlılıklar yükleniyor..."
             pip install -r requirements.txt
           else
-            echo "HATA: requirements.txt bulunamadı!"
+            echo "requirements.txt bulunamadı!"
             exit 1
           fi
+      
+      - name: Adım 1: Fon Listesi Oluştur (tarama_script.py)
+        run: python tarama_script.py weekly 2 # Son 2 haftalık getiriye göre filtrele
 
-      - name: Analiz Scriptini Çalıştır
-        run: |
-          echo "LOG: analiz_script.py çalıştırılıyor..."
-          python analiz_script.py
-          echo "LOG: analiz_script.py tamamlandı."
+      - name: Adım 2: Dinamik Analiz Yap (analiz_script.py)
+        run: python analiz_script.py
 
-      - name: Dosya Sistemini Kontrol Et
-        if: always()
-        run: |
-          echo "--- İşlem Sonrası Dosyalar Listeleniyor ---"
-          ls -l
-          echo "-------------------------------------------"
-
-      - name: Dosyaların Oluştuğunu Kontrol Et
-        id: check_files
-        if: always()
-        run: |
-          if ls Hisse_Senedi_Fon_Analizi_*.xlsx >/dev/null 2>&1; then
-            echo "LOG: Excel dosyası başarıyla oluşturuldu."
-            echo "excel_file_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "UYARI: Excel dosyası oluşturulamadı. Özet raporu kontrol edin."
-            echo "excel_file_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Özet Raporunu Artifact Olarak Yükle
-        if: always()
+      - name: Analiz Sonuçlarını Kaydet (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: Analiz_Ozeti
-          path: analiz_ozeti.txt
-          if-no-files-found: warn
-
-      - name: Excel Çıktısını Artifact Olarak Yükle
-        if: steps.check_files.outputs.excel_file_exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Fon_Analiz_Sonuc
-          path: Hisse_Senedi_Fon_Analizi_*.xlsx
-          if-no-files-found: warn
-
-      - name: Sürüm Oluştur ve Raporları Yükle
-        if: steps.check_files.outputs.excel_file_exists == 'true'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: analiz-${{ github.run_id }}
-          name: "Fon Analizi Raporu - ${{ github.run_id }}"
-          files: |
-            Hisse_Senedi_Fon_Analizi_*.xlsx
-            analiz_ozeti.txt
-          body: |
-            ${{ github.workflow }} iş akışının otomatik olarak oluşturduğu fon analizi raporu.
+          name: analiz-sonuclari-${{ github.run_id }}
+          path: |
+            *.xlsx
+            *.txt
