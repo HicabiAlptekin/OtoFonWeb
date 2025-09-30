@@ -34,10 +34,20 @@ def load_takasbank_fund_list():
         print(f"Takasbank Excel yükleme hatası: {e}")
         return pd.DataFrame()
 
-def get_price_on_or_before(df_fund_history, target_date: date):
+def get_value_on_or_before(df_fund_history, target_date: date, column: str = 'price'):
+    """Belirtilen tarihteki veya o tarihten önceki en yakın değeri döndürür."""
     if df_fund_history is None or df_fund_history.empty or target_date is None: return np.nan
     df_filtered = df_fund_history[df_fund_history['date'] <= target_date].copy()
-    if not df_filtered.empty: return df_filtered.sort_values(by='date', ascending=False)['price'].iloc[0]
+    if not df_filtered.empty:
+        return df_filtered.sort_values(by='date', ascending=False)[column].iloc[0]
+    return np.nan
+
+def get_value_on_or_after(df_fund_history, target_date: date, column: str = 'price'):
+    """Belirtilen tarihteki veya o tarihten sonraki en yakın değeri döndürür."""
+    if df_fund_history is None or df_fund_history.empty or target_date is None: return np.nan
+    df_filtered = df_fund_history[df_fund_history['date'] >= target_date].copy()
+    if not df_filtered.empty:
+        return df_filtered.sort_values(by='date', ascending=True)[column].iloc[0]
     return np.nan
 
 def calculate_change(current_price, past_price):
@@ -90,16 +100,26 @@ def run_weekly_scan(num_weeks: int):
 
             weekly_changes = []
             current_week_end_date = today
-            for _ in range(num_weeks):
-                current_week_start_date = current_week_end_date - timedelta(days=7)
-                price_end = get_price_on_or_before(fund_history, current_week_end_date)
-                price_start = get_price_on_or_before(fund_history, current_week_start_date)
-                weekly_changes.append(calculate_change(price_end, price_start))
-                current_week_end_date = current_week_start_date
             
+            # Bitiş fiyatını her zaman 'on_or_before' ile al
+            price_end = get_value_on_or_before(fund_history, current_week_end_date)
+
+            for i in range(num_weeks):
+                # Başlangıç tarihini referans al
+                past_date_ref = today - timedelta(weeks=(i + 1))
+                
+                # Başlangıç fiyatını 'on_or_after' ile alarak daha doğru bir başlangıç noktası bul
+                price_start = get_value_on_or_after(fund_history, past_date_ref)
+                
+                weekly_changes.append(calculate_change(price_end, price_start))
+            
+            # Haftalık getirileri ters çevirerek (Hafta_1, Hafta_2, ...) sıralamasını doğru yap
+            weekly_changes.reverse()
+
             if len(weekly_changes) == num_weeks and all(pd.notna(c) for c in weekly_changes):
                 result = {'Fon Kodu': fon_kodu}
-                for i, change in enumerate(weekly_changes):
+                # İlk iki haftanın getirisini al (eğer num_weeks > 2 ise)
+                for i, change in enumerate(weekly_changes[:2]):
                     result[f'Hafta_{i+1}_Getiri'] = change
                 weekly_results.append(result)
 
@@ -137,7 +157,13 @@ if __name__ == "__main__":
                 print(f"Hata: Filtrelenmiş fon listesi dosyaya yazılırken bir sorun oluştu: {e}")
         else:
             print("Filtreyi geçen fon bulunamadı.")
+            # Boş dosya oluşturarak sonraki adımın çalışmasını engelle
+            open('filtrelenmis_fonlar.txt', 'w').close()
+            print("'filtrelenmis_fonlar.txt' dosyası boş olarak oluşturuldu.")
     else:
         print("Haftalık tarama sonucu boş.")
+        # Boş dosya oluşturarak sonraki adımın çalışmasını engelle
+        open('filtrelenmis_fonlar.txt', 'w').close()
+        print("'filtrelenmis_fonlar.txt' dosyası boş olarak oluşturuldu.")
 
     print("\n--- Tarama Script'i Tamamlandı ---")
