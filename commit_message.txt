@@ -1,0 +1,7 @@
+feat: Improve calculation logic and CI/CD pipeline
+
+- Replaced the fund return calculation logic in `tarama_script.py` with a more accurate method based on the Colab reference code. This involves using `get_value_on_or_after` for start dates to handle holidays and non-trading days correctly.
+- Updated `analiz_script.py` to be a fully dynamic analysis script that reads from `filtrelenmis_fonlar.txt` and handles cases where the file is empty.
+- Enhanced the GitHub Actions workflow (`main.yml`) with caching for dependencies and a linting step using `ruff` to ensure code quality.
+- Overhauled `README.md` to provide clearer instructions and a better explanation of the automated workflow.
+- Added `ruff` to `requirements.txt`.
