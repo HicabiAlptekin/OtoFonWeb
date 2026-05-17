@@ -1,4 +1,4 @@
-name: OtoFon Dinamik Analiz v3.0
+name: OtoFon Dinamik Analiz v3.1
 
 on:
   push:
@@ -31,16 +31,14 @@ jobs:
         run: ruff check . --output-format=github || echo "Devam ediliyor..."
         continue-on-error: true
 
-      - name: Adım 1-2-3 - Tarama + Trend Analizi + Fonaliz
-        env:
-          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+      - name: Tarama + Trend Analizi + Fonaliz
         run: python -u ytarama_script.py weekly 2
 
       - name: Sonuclari Kaydet (Artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: otofon-sonuclari-${{ github.run_id }}
+          name: otofon-raporu-${{ github.run_id }}
           path: |
             *.xlsx
             *.txt

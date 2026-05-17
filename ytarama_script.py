@@ -1,22 +1,19 @@
 # -*- coding: utf-8 -*-
 # ENTEGRE FON TARAMA VE ANALİZ ARACI (OtoFon + Fonaliz + Trend Analizi)
-# v3.0 - tefas-crawler v0.6.0+ API + 3 Günlük Trend Analizi + Google Sheets
+# v3.1 - tefas-crawler v0.6.0+ API + 3 Günlük Trend Analizi + Excel Çıktısı
 #
-# Bu script, GitHub Actions'da çalışarak:
+# Bu script:
 # 1. Takasbank'tan fon listesini alır
 # 2. TEFAS API'sinden (v0.6.0+) fon verilerini çeker
 # 3. Haftalık getiri analizi yapar
 # 4. 3 günlük kısa trend analizi yapar
 # 5. Fonaliz risk/getiri metriklerini hesaplar
-# 6. Tüm sonuçları Google Sheets'e yazar
+# 6. Tüm sonuçları Excel dosyasına kaydeder
 
 import pandas as pd
 import numpy as np
 import time
-import gspread
-import pytz
 import os
-import json
 import sys
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
@@ -29,55 +26,34 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- SABİTLER ---
-GSPREAD_CREDENTIALS_SECRET = os.environ.get('GCP_SERVICE_ACCOUNT_KEY')
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
-SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
-WORKSHEET_MANUAL = 'veriler'
-WORKSHEET_WEEKLY = 'haftalık'
-WORKSHEET_FONALIZ = 'Fonanaliz'
-WORKSHEET_TREND = 'Kısa Trend'  # YENİ: 3 günlük trend analizi sayfası
-TIMEZONE = pytz.timezone('Europe/Istanbul')
 MAX_WORKERS = 10
 TREND_GUN_SAYISI = 3
+EXCEL_DOSYASI = f"OtoFon_Raporu_{date.today().strftime('%Y-%m-%d')}.xlsx"
 
 # Global TEFAS crawler
 try:
     tefas_crawler_global = Crawler()
-    print("✅ TEFAS Crawler başlatıldı.")
+    print("[OK] TEFAS Crawler baslatildi.")
 except Exception as e:
-    print(f"❌ TEFAS Crawler hatası: {e}")
+    print(f"[HATA] TEFAS Crawler: {e}")
     tefas_crawler_global = None
 
 
 # --- YARDIMCI FONKSİYONLAR ---
-def google_sheets_auth():
-    print("\n🔑 Google Sheets kimlik doğrulaması...")
-    try:
-        if not GSPREAD_CREDENTIALS_SECRET:
-            print("❌ GCP_SERVICE_ACCOUNT_KEY bulunamadı.")
-            sys.exit(1)
-        gc = gspread.service_account_from_dict(json.loads(GSPREAD_CREDENTIALS_SECRET))
-        print("✅ Google Sheets bağlantısı başarılı.")
-        return gc
-    except Exception as e:
-        print(f"❌ Google Sheets hatası: {e}")
-        traceback.print_exc()
-        sys.exit(1)
-
-
 def load_takasbank_fund_list():
     """Takasbank'tan güncel fon listesini yükler."""
-    print("📥 Takasbank fon listesi yükleniyor...")
+    print("[INDIR] Takasbank fon listesi yukleniyor...")
     try:
         df_excel = pd.read_excel(TAKASBANK_EXCEL_URL, engine='openpyxl')
         df_data = df_excel[['Fon Adı', 'Fon Kodu']].copy()
         df_data['Fon Kodu'] = df_data['Fon Kodu'].astype(str).str.strip().str.upper()
         df_data.dropna(subset=['Fon Kodu'], inplace=True)
         df_data = df_data[df_data['Fon Kodu'] != '']
-        print(f"✅ {len(df_data)} fon bulundu.")
+        print(f"[OK] {len(df_data)} fon bulundu.")
         return df_data
     except Exception as e:
-        print(f"❌ Takasbank yükleme hatası: {e}")
+        print(f"[HATA] Takasbank yukleme: {e}")
         return pd.DataFrame()
 
 
@@ -109,7 +85,7 @@ def calculate_change(current_price, past_price):
 
 
 def fetch_fund_data(args):
-    """TEFAS v0.6.0 API ile fon verisi çeker (basitleştirilmiş)."""
+    """TEFAS v0.6.0 API ile fon verisi çeker."""
     fon_kodu, start_date, end_date = args
     global tefas_crawler_global
     if tefas_crawler_global is None:
@@ -130,12 +106,12 @@ def fetch_fund_data(args):
         fon_adi = df['title'].iloc[0] if 'title' in df.columns else fon_kodu
         return fon_kodu, fon_adi, df
     except Exception as e:
-        print(f"  ⚠️ {fon_kodu}: Veri çekme hatası - {e}")
+        print(f"  [UYARI] {fon_kodu}: Veri cekme hatasi - {e}")
         return fon_kodu, None, None
 
 
 def hesapla_metrikler(df_fon_fiyat):
-    """Risk/getiri metriklerini hesaplar (v0.6.0 uyumlu)."""
+    """Risk/getiri metriklerini hesaplar."""
     if df_fon_fiyat is None or len(df_fon_fiyat) < 10:
         return None
     df_fon_fiyat['daily_return'] = df_fon_fiyat['price'].pct_change()
@@ -158,47 +134,81 @@ def hesapla_metrikler(df_fon_fiyat):
 
     return {
         'Getiri (%)': round(getiri * 100, 2),
-        'Standart Sapma (%)': round(volatilite * 100, 2),
-        'Sharpe (Yıllık)': round(sharpe, 2),
-        'Sortino (Yıllık)': round(sortino, 2),
+        'Standart Sapma (Yıllık %)': round(volatilite * 100, 2),
+        'Sharpe Oranı (Yıllık)': round(sharpe, 2),
+        'Sortino Oranı (Yıllık)': round(sortino, 2),
     }
 
 
-def write_to_sheet(spreadsheet, worksheet_name, df_data, headers=None):
-    """DataFrame'i Google Sheets sayfasına yazar."""
+def write_to_excel(haftalik_df, trend_df, fonaliz_df, filename=EXCEL_DOSYASI):
+    """DataFrame'leri Excel dosyasına çoklu sayfa olarak yazar."""
     try:
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-        except gspread.exceptions.WorksheetNotFound:
-            print(f"  📋 '{worksheet_name}' sayfası oluşturuluyor...")
-            worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows="2000", cols=30)
+        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+            workbook = writer.book
 
-        worksheet.clear()
-        df_clean = df_data.replace([np.inf, -np.inf], np.nan).fillna('')
-        if headers:
-            worksheet.update([headers] + df_clean.values.tolist())
-        else:
-            worksheet.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
+            # --- Sayfa 1: Haftalık Getiriler ---
+            if haftalik_df is not None and not haftalik_df.empty:
+                haftalik_kolonlar = ['Fon Kodu', 'Fon Adı', 'Hafta_1_Getiri', 'Hafta_2_Getiri', 'Toplam_Getiri']
+                df_haftalik = haftalik_df[haftalik_kolonlar].sort_values('Toplam_Getiri', ascending=False, na_position='last')
+                df_haftalik.to_excel(writer, sheet_name='Haftalık', index=False)
+                ws = writer.sheets['Haftalık']
+                for i, col in enumerate(df_haftalik.columns):
+                    max_len = max(df_haftalik[col].astype(str).map(len).max(), len(col)) + 2
+                    ws.set_column(i, i, max_len)
+                print(f"  [OK] 'Haftalik' sayfasi: {len(df_haftalik)} fon")
 
-        body = {"requests": [{"autoResizeDimensions": {
-            "dimensions": {"sheetId": worksheet.id, "dimension": "COLUMNS"}
-        }}]}
-        spreadsheet.batch_update(body)
-        print(f"  ✅ '{worksheet_name}' güncellendi.")
-        return worksheet
+            # --- Sayfa 2: Kısa Trend Analizi ---
+            if trend_df is not None and not trend_df.empty:
+                trend_kolonlar = ['Fon Kodu', 'Fon Adı', 'Trend_Yonu', 'Trend_Skoru',
+                                   'Son_3G_Ort_%', 'Onceki_3G_Ort_%',
+                                   'Hafta_1_Getiri', 'Hafta_2_Getiri', 'Toplam_Getiri']
+                df_kisa_trend = trend_df[trend_kolonlar].copy()
+
+                trend_sirasi = {'HIZLANAN': 0, 'YUKSELEN': 1, 'DONUS': 2, 'DUSUS': 3, 'DUSEN': 4, 'VERI_YOK': 5}
+                df_kisa_trend['_sira'] = df_kisa_trend['Trend_Yonu'].map(trend_sirasi).fillna(5)
+                df_kisa_trend = df_kisa_trend.sort_values(['_sira', 'Trend_Skoru'], ascending=[True, False]).drop(columns=['_sira'])
+
+                trend_baslik = ['Fon Kodu', 'Fon Adı', 'Trend Yönü', 'Trend Skoru',
+                                 'Son 3G Ort %', 'Önceki 3G Ort %',
+                                 'Hafta 1 Getiri %', 'Hafta 2 Getiri %', 'Toplam Getiri %']
+                df_kisa_trend.to_excel(writer, sheet_name='Kısa Trend', index=False, header=trend_baslik)
+                ws = writer.sheets['Kısa Trend']
+                for i, col in enumerate(df_kisa_trend.columns):
+                    max_len = max(df_kisa_trend[col].astype(str).map(len).max(), len(trend_baslik[i])) + 2
+                    ws.set_column(i, i, max_len)
+                print(f"  [OK] 'Kisa Trend' sayfasi: {len(df_kisa_trend)} fon")
+
+            # --- Sayfa 3: Fonaliz Risk Analizi ---
+            if fonaliz_df is not None and not fonaliz_df.empty:
+                fonaliz_kolonlar = ['Fon Kodu', 'Fon Adı', 'Sortino Oranı (Yıllık)',
+                                     'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)']
+                df_fonaliz = fonaliz_df[fonaliz_kolonlar].sort_values(
+                    ['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'],
+                    ascending=[False, False]
+                )
+                df_fonaliz.to_excel(writer, sheet_name='Fonaliz', index=False)
+                ws = writer.sheets['Fonaliz']
+                for i, col in enumerate(df_fonaliz.columns):
+                    max_len = max(df_fonaliz[col].astype(str).map(len).max(), len(col)) + 2
+                    ws.set_column(i, i, max_len)
+                print(f"  [OK] 'Fonaliz' sayfasi: {len(df_fonaliz)} fon")
+
+        print(f"\n[DOSYA] Excel olusturuldu: {filename}")
+        return True
     except Exception as e:
-        print(f"  ❌ '{worksheet_name}' yazma hatası: {e}")
-        return None
+        print(f"[HATA] Excel yazma: {e}")
+        traceback.print_exc()
+        return False
 
 
 # --- TEKİL TARAMA ---
-def run_single_scan(gc, scan_date=None):
-    """Belirli bir tarih için tekil tarama yapar."""
+def run_single_scan(scan_date=None):
+    """Belirli bir tarih için tekil tarama yapar ve Excel'e kaydeder."""
     if scan_date is None:
-        scan_date = datetime.now(TIMEZONE).date() - timedelta(days=1)
+        scan_date = datetime.now().date() - timedelta(days=1)
 
     print(f"\n{'='*50}")
-    print(f"📊 AŞAMA 1: TEKİL TARAMA ({scan_date})")
+    print(f"[ASAMA 1] TEKIL TARAMA ({scan_date})")
     print(f"{'='*50}")
 
     fon_df = load_takasbank_fund_list()
@@ -233,25 +243,27 @@ def run_single_scan(gc, scan_date=None):
     if sonuclar:
         df = pd.DataFrame(sonuclar)
         df = df.sort_values('Haftalık %', ascending=False, na_position='last')
-        write_to_sheet(gc.open_by_key(SHEET_ID), WORKSHEET_MANUAL, df)
-        print(f"✅ Tekil tarama tamamlandı: {len(df)} fon")
+        # Tekil taramayı da aynı Excel'e ekleyelim
+        with pd.ExcelWriter(EXCEL_DOSYASI, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Tekil Tarama', index=False)
+            ws = writer.sheets['Tekil Tarama']
+            for i, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                ws.set_column(i, i, max_len)
+        print(f"[OK] Tekil tarama tamamlandi: {len(df)} fon -> {EXCEL_DOSYASI}")
 
 
-# --- HAFTALIK TARAMA + TREND ANALİZİ (GÜNCELLENMİŞ) ---
-def run_weekly_scan(gc, num_weeks=2):
+# --- HAFTALIK TARAMA + TREND ANALİZİ ---
+def run_weekly_scan(num_weeks=2):
     """
     Haftalık getiri analizi + 3 günlük trend analizi.
-    
-    Değişiklikler (v3.0):
-    - Her hafta için ayrı bitiş fiyatı kullanılır (düzeltildi)
-    - Son 3 iş günü vs önceki 3 iş günü trend analizi eklendi
-    - Trend sınıflandırması: HIZLANAN, YUKSELEN, DONUS, DUSUS, DUSEN
+    v3.1: Excel çıktısı (Google Sheets kaldırıldı)
     """
     print(f"\n{'='*50}")
-    print(f"📊 AŞAMA 2: HAFTALIK TARAMA ({num_weeks} hafta) + TREND ANALİZİ")
+    print(f"[ASAMA 1] HAFTALIK TARAMA ({num_weeks} hafta) + TREND ANALIZI")
     print(f"{'='*50}")
 
-    today = datetime.now(TIMEZONE).date()
+    today = date.today()
     fon_df = load_takasbank_fund_list()
     if fon_df.empty:
         return [], pd.DataFrame()
@@ -267,17 +279,16 @@ def run_weekly_scan(gc, num_weeks=2):
             if data is None or data.empty or len(data) < 10:
                 continue
 
-            # --- HAFTALIK GETİRİ (DÜZELTİLDİ) ---
-            # Hafta_2 (en yeni): bugün / 1 hafta önce
+            # Haftalık getiri
             fiyat_now = get_value_on_or_before(data, today)
             fiyat_1w = get_value_on_or_after(data, today - timedelta(weeks=1))
             fiyat_2w = get_value_on_or_after(data, today - timedelta(weeks=2))
-            
+
             hafta2_getiri = calculate_change(fiyat_now, fiyat_1w)
             hafta1_getiri = calculate_change(fiyat_1w, fiyat_2w)
             toplam_getiri = (hafta1_getiri + hafta2_getiri) if pd.notna(hafta1_getiri) and pd.notna(hafta2_getiri) else np.nan
 
-            # --- 3 GÜNLÜK TREND ANALİZİ (YENİ) ---
+            # 3 günlük trend analizi
             son_3g_ort = np.nan
             onceki_3g_ort = np.nan
             trend_skoru = np.nan
@@ -311,71 +322,52 @@ def run_weekly_scan(gc, num_weeks=2):
             sonuc = {
                 'Fon Kodu': kod,
                 'Fon Adı': ad,
-                'Hafta_1_Getiri': round(hafta1_getiri, 2) if pd.notna(hafta1_getiri) else '',
-                'Hafta_2_Getiri': round(hafta2_getiri, 2) if pd.notna(hafta2_getiri) else '',
-                'Toplam_Getiri': round(toplam_getiri, 2) if pd.notna(toplam_getiri) else '',
-                'Son_3G_Ort_%': round(son_3g_ort, 4) if pd.notna(son_3g_ort) else '',
-                'Onceki_3G_Ort_%': round(onceki_3g_ort, 4) if pd.notna(onceki_3g_ort) else '',
-                'Trend_Skoru': round(trend_skoru, 4) if pd.notna(trend_skoru) else '',
+                'Hafta_1_Getiri': round(hafta1_getiri, 2) if pd.notna(hafta1_getiri) else np.nan,
+                'Hafta_2_Getiri': round(hafta2_getiri, 2) if pd.notna(hafta2_getiri) else np.nan,
+                'Toplam_Getiri': round(toplam_getiri, 2) if pd.notna(toplam_getiri) else np.nan,
+                'Son_3G_Ort_%': round(son_3g_ort, 4) if pd.notna(son_3g_ort) else np.nan,
+                'Onceki_3G_Ort_%': round(onceki_3g_ort, 4) if pd.notna(onceki_3g_ort) else np.nan,
+                'Trend_Skoru': round(trend_skoru, 4) if pd.notna(trend_skoru) else np.nan,
                 'Trend_Yonu': trend_yonu,
             }
             sonuclar.append(sonuc)
 
     if not sonuclar:
-        print("❌ Veri bulunamadı.")
+        print("[HATA] Veri bulunamadi.")
         return [], pd.DataFrame()
 
     df_sonuc = pd.DataFrame(sonuclar)
 
-    # --- GOOGLE SHEETS: HAFTALIK SAYFASI ---
-    haftalik_kolonlar = ['Fon Kodu', 'Fon Adı', 'Hafta_1_Getiri', 'Hafta_2_Getiri', 'Toplam_Getiri']
-    df_haftalik = df_sonuc[haftalik_kolonlar].sort_values('Toplam_Getiri', ascending=False, na_position='last')
-    write_to_sheet(gc.open_by_key(SHEET_ID), WORKSHEET_WEEKLY, df_haftalik)
-
-    # --- GOOGLE SHEETS: KISA TREND SAYFASI (YENİ) ---
-    trend_kolonlar = ['Fon Kodu', 'Fon Adı', 'Trend_Yonu', 'Trend_Skoru',
-                       'Son_3G_Ort_%', 'Onceki_3G_Ort_%',
-                       'Hafta_1_Getiri', 'Hafta_2_Getiri', 'Toplam_Getiri']
-    df_trend = df_sonuc[trend_kolonlar].copy()
-    
-    # Trend skoruna göre sırala (HIZLANAN/YUKSELEN/DONUS önde)
-    trend_sirasi = {'HIZLANAN': 0, 'YUKSELEN': 1, 'DONUS': 2, 'DUSUS': 3, 'DUSEN': 4, 'VERI_YOK': 5}
-    df_trend['_sira'] = df_trend['Trend_Yonu'].map(trend_sirasi).fillna(5)
-    df_trend = df_trend.sort_values(['_sira', 'Trend_Skoru'], ascending=[True, False]).drop(columns=['_sira'])
-
-    trend_baslik = ['Fon Kodu', 'Fon Adı', 'Trend Yönü', 'Trend Skoru',
-                     'Son 3G Ort %', 'Önceki 3G Ort %',
-                     'Hafta 1 Getiri %', 'Hafta 2 Getiri %', 'Toplam Getiri %']
-    write_to_sheet(gc.open_by_key(SHEET_ID), WORKSHEET_TREND, df_trend, headers=trend_baslik)
-
-    print(f"\n📈 Trend Dağılımı:")
+    # Trend dağılımı
+    print(f"\n[TREND] Dagitim:")
     for yon in ['HIZLANAN', 'YUKSELEN', 'DONUS', 'DUSUS', 'DUSEN', 'VERI_YOK']:
-        sayi = len(df_trend[df_trend['Trend_Yonu'] == yon])
+        sayi = len(df_sonuc[df_sonuc['Trend_Yonu'] == yon])
         if sayi > 0:
             print(f"  {yon}: {sayi} fon")
 
-    # Filtrele: Toplam getiri >= %2 VE trend yükselişte
+    # Filtreleme
     filtre_df = df_sonuc[
         (pd.to_numeric(df_sonuc['Toplam_Getiri'], errors='coerce').fillna(0) >= 2) &
         (df_sonuc['Trend_Yonu'].isin(['HIZLANAN', 'YUKSELEN', 'DONUS']))
     ]
     fonaliz_fonlar = filtre_df['Fon Kodu'].tolist()
-    print(f"\n🎯 Fonaliz için seçilen: {len(fonaliz_fonlar)} fon")
+    print(f"\n[FILTRE] Fonaliz icin secilen: {len(fonaliz_fonlar)} fon")
+
     return fonaliz_fonlar, df_sonuc
 
 
 # --- FONALİZ RİSK ANALİZİ ---
-def run_fonaliz(gc, fon_listesi):
+def run_fonaliz(fon_listesi):
     """Filtrelenmiş fonlar için risk/getiri metriklerini hesaplar."""
     if not fon_listesi:
-        print("ℹ️ Analiz için fon bulunamadı.")
-        return
+        print("[BILGI] Analiz icin fon bulunamadi.")
+        return pd.DataFrame()
 
     print(f"\n{'='*50}")
-    print(f"📊 AŞAMA 3: FONALİZ RİSK ANALİZİ ({len(fon_listesi)} fon)")
+    print(f"[ASAMA 2] FONALIZ RISK ANALIZI ({len(fon_listesi)} fon)")
     print(f"{'='*50}")
 
-    today = datetime.now(TIMEZONE).date()
+    today = date.today()
     baslangic = today - relativedelta(months=3) - timedelta(days=30)
     tasks = [(kod, baslangic, today) for kod in fon_listesi]
     sonuclar = []
@@ -392,20 +384,19 @@ def run_fonaliz(gc, fon_listesi):
 
     if sonuclar:
         df = pd.DataFrame(sonuclar)
-        df = df.sort_values(['Sortino (Yıllık)', 'Sharpe (Yıllık)'], ascending=[False, False])
-        write_to_sheet(gc.open_by_key(SHEET_ID), WORKSHEET_FONALIZ, df)
-        print(f"✅ Fonaliz tamamlandı: {len(df)} fon analiz edildi.")
+        df = df.sort_values(['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
+        print(f"[OK] Fonaliz tamamlandi: {len(df)} fon analiz edildi.")
+        return df
     else:
-        print("ℹ️ Fonaliz için veri bulunamadı.")
+        print("[BILGI] Fonaliz icin veri bulunamadi.")
+        return pd.DataFrame()
 
 
 # --- ANA ÇALIŞTIRMA ---
 if __name__ == '__main__':
     print("=" * 50)
-    print("🏦 OtoFon v3.0 - Entegre Fon Tarama ve Analiz")
+    print("OtoFon v3.1 - Entegre Fon Tarama ve Analiz")
     print("=" * 50)
-
-    gc = google_sheets_auth()
 
     scan_type = sys.argv[1].lower() if len(sys.argv) > 1 else 'weekly'
 
@@ -415,27 +406,49 @@ if __name__ == '__main__':
             try:
                 tarih = datetime.strptime(sys.argv[2], '%Y-%m-%d').date()
             except ValueError:
-                print("❌ Tarih formatı YYYY-MM-DD olmalı")
+                print("[HATA] Tarih formati YYYY-MM-DD olmali")
                 sys.exit(1)
-        run_single_scan(gc, tarih)
+        run_single_scan(tarih)
 
     elif scan_type == 'weekly':
         hafta = int(sys.argv[2]) if len(sys.argv) > 2 else 2
-        
-        # AŞAMA 2: Haftalık tarama + trend analizi
-        fonaliz_fonlar, _ = run_weekly_scan(gc, hafta)
-        
-        # AŞAMA 3: Fonaliz risk analizi
-        run_fonaliz(gc, fonaliz_fonlar)
+
+        # AŞAMA 1: Haftalık tarama + trend analizi
+        fonaliz_fonlar, df_sonuc = run_weekly_scan(hafta)
+
+        # AŞAMA 2: Fonaliz risk analizi
+        df_fonaliz = run_fonaliz(fonaliz_fonlar)
+
+        # Excel'e yaz
+        print(f"\n{'='*50}")
+        print("[DOSYA] Excel raporu olusturuluyor...")
+        print(f"{'='*50}")
+
+        if df_sonuc is not None and not df_sonuc.empty:
+            # Trend verilerini ayır
+            haftalik_df = df_sonuc.copy()
+            trend_df = df_sonuc.copy()
+
+            # Fonaliz analizi yoksa boş DF
+            if df_fonaliz is None or df_fonaliz.empty:
+                df_fonaliz = pd.DataFrame()
+
+            write_to_excel(haftalik_df, trend_df, df_fonaliz)
+
+            # Ayrıca filtrelenmiş fon listesini txt olarak kaydet
+            with open('filtrelenmis_fonlar.txt', 'w', encoding='utf-8') as f:
+                for kod in fonaliz_fonlar:
+                    f.write(f"{kod}\n")
+            print(f"[OK] filtrelenmis_fonlar.txt kaydedildi ({len(fonaliz_fonlar)} fon)")
 
         print(f"\n{'='*50}")
-        print(f"✅ Tüm işlemler tamamlandı!")
+        print(f"[OK] Tum islemler tamamlandi!")
         print(f"{'='*50}")
-        print(f"📊 Google Sheets'te güncellenen sayfalar:")
-        print(f"  1. '{WORKSHEET_WEEKLY}' - Haftalık getiriler")
-        print(f"  2. '{WORKSHEET_TREND}' - Kısa Trend (3 günlük analiz) ⭐ YENİ")
-        print(f"  3. '{WORKSHEET_FONALIZ}' - Risk/Getiri metrikleri")
-        print(f"📈 {len(fonaliz_fonlar)} fon yükseliş trendinde ve filtreleri geçti.")
+        print(f"[RAPOR] Excel: {EXCEL_DOSYASI}")
+        print(f"  - Sayfa 1: 'Haftalik' - Haftalik getiriler")
+        print(f"  - Sayfa 2: 'Kisa Trend' - 3 gunluk trend analizi")
+        print(f"  - Sayfa 3: 'Fonaliz' - Risk/Getiri metrikleri")
+        print(f"[SONUC] {len(fonaliz_fonlar)} fon yukselis trendinde ve filtreleri gecti.")
 
     else:
-        print(f"❌ Geçersiz parametre: {scan_type}. 'weekly' veya 'single' kullanın.")
+        print(f"[HATA] Gecersiz parametre: {scan_type}. 'weekly' veya 'single' kullanin.")
