@@ -1,6 +1,11 @@
 pandas
 numpy
-tefas-crawler
+tefas-crawler>=0.6.0
 openpyxl
 xlsxwriter
 ruff
+gspread>=5.0.0
+google-auth>=2.0.0
+pytz
+tqdm
+python-dateutil

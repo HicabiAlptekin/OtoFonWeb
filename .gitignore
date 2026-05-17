@@ -1,0 +1,8 @@
+*.xlsx
+*.xls
+~$*.xlsx
+__pycache__/
+*.pyc
+.env
+taranan_fon_listesi.txt
+filtrelenmis_fonlar.txt

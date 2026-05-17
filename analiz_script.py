@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-# Fonaliz - Dinamik Fon Analiz Aracı
+# Fonaliz - Dinamik Fon Analiz Aracı (v2.0)
 # Bu script, 'filtrelenmis_fonlar.txt' dosyasında listelenen fonlar için
 # detaylı risk ve getiri analizi yapar.
+# v2.0 - tefas-crawler v0.6.0+ API desteği eklendi
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, date
+from datetime import date, timedelta
 import time
 import warnings
 import concurrent.futures
@@ -22,6 +23,15 @@ ANALIZ_SURESI_AY = 3
 MAX_WORKERS = 10
 INPUT_FILE = "filtrelenmis_fonlar.txt"
 
+# Global TEFAS crawler (tekil örnek)
+try:
+    tefas_crawler_global = Crawler()
+    print("TEFAS Crawler başarıyla başlatıldı.")
+except Exception as e:
+    print(f"TEFAS Crawler başlatılırken hata: {e}")
+    tefas_crawler_global = None
+
+
 # --- Yardımcı Fonksiyonlar ---
 def load_filtered_fund_list():
     """
@@ -32,79 +42,98 @@ def load_filtered_fund_list():
         print(f"HATA: Analiz için fon listesini içeren '{INPUT_FILE}' dosyası bulunamadı.")
         print("Lütfen önce tarama script'ini çalıştırarak bu dosyayı oluşturun.")
         sys.exit(1)
-    
+
     with open(INPUT_FILE, 'r', encoding='utf-8') as f:
         fon_kodlari = [line.strip() for line in f if line.strip()]
-        
+
     if not fon_kodlari:
         print(f"UYARI: '{INPUT_FILE}' dosyası boş. Analiz edilecek fon bulunamadı.")
         sys.exit(0)
-        
+
     print(f"'{INPUT_FILE}' dosyasından {len(fon_kodlari)} adet fon kodu okundu.")
     return fon_kodlari
 
+
 def fetch_data_for_fund_parallel(args):
     """
-    Verilen bir fon kodu için TEFAS'tan paralel olarak veri çeker.
+    Verilen bir fon kodu için TEFAS v0.6.0 API'sinden veri çeker.
     """
     fon_kodu, start_date, end_date = args
+    global tefas_crawler_global
+    if tefas_crawler_global is None:
+        return fon_kodu, None, None
+
     try:
-        crawler = Crawler()
-        df = crawler.fetch(
+        df = tefas_crawler_global.fetch(
             start=start_date.strftime("%Y-%m-%d"),
             end=end_date.strftime("%Y-%m-%d"),
             name=fon_kodu,
-            columns=["date", "price", "market_cap", "number_of_investors", "title"]
+            columns=["date", "price", "title"]
         )
+
         if df.empty:
             return fon_kodu, None, None
-        
+
         df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.date
-        fon_adi = df['title'].iloc[0] if not df.empty and 'title' in df.columns else fon_kodu
+        df = df.dropna(subset=['date'])
+        fon_adi = df['title'].iloc[0] if 'title' in df.columns and not df.empty else fon_kodu
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
+
     except Exception as e:
         print(f"HATA ({fon_kodu}): Veri çekilirken sorun oluştu - {e}")
         return fon_kodu, None, None
 
+
 def hesapla_metrikler(df_fon_fiyat):
     """
     Bir fonun geçmiş fiyat verilerini kullanarak risk/getiri metriklerini hesaplar.
+    Not: v0.6.0 API'de market_cap ve number_of_investors sütunları kaldırılmıştır.
     """
-    if df_fon_fiyat is None or len(df_fon_fiyat) < 10: return None
+    if df_fon_fiyat is None or len(df_fon_fiyat) < 10:
+        return None
+
     df_fon_fiyat['daily_return'] = df_fon_fiyat['price'].pct_change()
     df_fon_fiyat = df_fon_fiyat.dropna()
-    if df_fon_fiyat.empty: return None
+    if df_fon_fiyat.empty:
+        return None
 
     getiri = (df_fon_fiyat['price'].iloc[-1] / df_fon_fiyat['price'].iloc[0]) - 1
     volatilite = df_fon_fiyat['daily_return'].std() * np.sqrt(252)
     ortalama_gunluk_getiri = df_fon_fiyat['daily_return'].mean()
-    sharpe_orani = (ortalama_gunluk_getiri / df_fon_fiyat['daily_return'].std()) * np.sqrt(252) if df_fon_fiyat['daily_return'].std() != 0 else 0
-    
+
+    # Sharpe Oranı
+    gunluk_std = df_fon_fiyat['daily_return'].std()
+    sharpe_orani = (ortalama_gunluk_getiri / gunluk_std) * np.sqrt(252) if gunluk_std != 0 else 0
+
+    # Sortino Oranı
     negatif_getiriler = df_fon_fiyat[df_fon_fiyat['daily_return'] < 0]['daily_return']
-    downside_deviation = negatif_getiriler.std() * np.sqrt(252) if not negatif_getiriler.empty else 0
-    sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
-        
+    if negatif_getiriler.empty or negatif_getiriler.std() == 0:
+        sortino_orani = 0
+    else:
+        downside_deviation = negatif_getiriler.std() * np.sqrt(252)
+        sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
+
     return {
         'Getiri (%)': round(getiri * 100, 2),
         'Standart Sapma (Yıllık %)': round(volatilite * 100, 2),
         'Sharpe Oranı (Yıllık)': round(sharpe_orani, 2),
         'Sortino Oranı (Yıllık)': round(sortino_orani, 2),
-        'Piyasa Değeri (TL)': df_fon_fiyat['market_cap'].iloc[-1],
-        'Yatırımcı Sayısı': df_fon_fiyat['number_of_investors'].iloc[-1]
     }
+
 
 def main():
     """
     Ana fonksiyon: fon listesini okur, verileri çeker, analiz eder ve sonucu Excel'e yazar.
     """
-    print("--- Fonaliz Dinamik Analiz Script'i Başlatıldı ---")
+    print("--- Fonaliz Dinamik Analiz Script'i Başlatıldı (v2.0) ---")
     start_time = time.time()
-    
+
     fon_listesi = load_filtered_fund_list()
-    
+
     end_date = date.today()
-    start_date = end_date - relativedelta(months=ANALIZ_SURESI_AY)
-    
+    # Veri buffer'ı için fazladan 30 gün ekle
+    start_date = end_date - relativedelta(months=ANALIZ_SURESI_AY) - timedelta(days=30)
+
     tasks = [(fon_kodu, start_date, end_date) for fon_kodu in fon_listesi]
     analiz_sonuclari = []
 
@@ -112,10 +141,10 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, task): task[0] for task in tasks}
-        
+
         for future in concurrent.futures.as_completed(future_to_fon):
             fon_kodu, fon_adi, data = future.result()
-            if data is not None:
+            if data is not None and not data.empty:
                 metrikler = hesapla_metrikler(data)
                 if metrikler:
                     sonuc = {'Fon Kodu': fon_kodu, 'Fon Adı': fon_adi, **metrikler}
@@ -126,13 +155,18 @@ def main():
         return
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
-    sutun_sirasi = ['Fon Kodu', 'Fon Adı', 'Yatırımcı Sayısı', 'Piyasa Değeri (TL)', 'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)', 'Getiri (%)', 'Standart Sapma (Yıllık %)']
+    sutun_sirasi = ['Fon Kodu', 'Fon Adı',
+                    'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)',
+                    'Getiri (%)', 'Standart Sapma (Yıllık %)']
     df_sonuc = df_sonuc[sutun_sirasi]
-    df_sonuc_sirali = df_sonuc.sort_values(by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'], ascending=[False, False])
+    df_sonuc_sirali = df_sonuc.sort_values(
+        by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'],
+        ascending=[False, False]
+    )
 
-    excel_dosya_adi = f"Fonaliz_Sonuclari_{end_date.strftime('%Y-%m-%d')}.xlsx"
+    excel_dosya_adi = f"Fonaliz_Sonuclari_{end_date.strftime('%Y-%m-%d')}_v2.xlsx"
     print(f"\nAnaliz tamamlandı. Sonuçlar '{excel_dosya_adi}' dosyasına yazılıyor...")
-    
+
     try:
         with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
             df_sonuc_sirali.to_excel(writer, sheet_name='Analiz Sonuclari', index=False)
@@ -146,6 +180,7 @@ def main():
 
     end_time = time.time()
     print(f"\n--- Tüm işlemler {end_time - start_time:.2f} saniyede tamamlandı ---")
+
 
 if __name__ == "__main__":
     main()
