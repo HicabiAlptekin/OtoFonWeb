@@ -6,10 +6,9 @@
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, date, timedelta
+from datetime import date
 from dateutil.relativedelta import relativedelta
 from tefas import Crawler
-import time
 import sys
 import warnings
 warnings.filterwarnings('ignore')

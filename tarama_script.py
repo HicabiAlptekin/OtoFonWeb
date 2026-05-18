@@ -221,21 +221,21 @@ if __name__ == "__main__":
         filtre1_df = haftalik_sonuclar_df[
             haftalik_sonuclar_df['Toplam_Getiri'].fillna(0) >= 2
         ].copy()
-        print(f"  -> {len(filtre1_df)} fon filtreyi geçti")
-        
-        print(f"\nFİLTRE 2: Son 3 iş günü yükseliş trendinde (HIZLANAN, YUKSELEN veya DONUS)")
+        print("  -> {} fon filtreyi geçti".format(len(filtre1_df)))
+
+        print("\nFİLTRE 2: Son 3 iş günü yükseliş trendinde (HIZLANAN, YUKSELEN veya DONUS)")
         # FİLTRE 2: Trend analizi - yükselen trend veya dönüş
         filtre2_df = filtre1_df[
             filtre1_df['Trend_Yonu'].isin(['HIZLANAN', 'YUKSELEN', 'DONUS'])
         ].copy()
-        print(f"  -> {len(filtre2_df)} fon filtreyi geçti")
-        
+        print("  -> {} fon filtreyi geçti".format(len(filtre2_df)))
+
         # Ortak filtre
-        print(f"\nFİLTRE 3 (KOMBİNE): Filtre 1 + Filtre 2 (tavsiye edilen)")
+        print("\nFİLTRE 3 (KOMBİNE): Filtre 1 + Filtre 2 (tavsiye edilen)")
         filtre3_df = filtre2_df.copy()
-        
+
         if not filtre3_df.empty:
-            print(f"  -> {len(filtre3_df)} fon tüm filtreleri geçti")
+            print("  -> {} fon tüm filtreleri geçti".format(len(filtre3_df)))
             
             # Sıralama: Trend skoru yüksek olanlar önce
             filtre3_df = filtre3_df.sort_values(

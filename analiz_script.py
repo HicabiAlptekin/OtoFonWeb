@@ -39,7 +39,7 @@ try:
     tefas_crawler_global = Crawler()
     print("TEFAS Crawler başarıyla başlatıldı.")
 except Exception as e:
-    print(f"TEFAS Crawler başlatılırken hata: {e}")
+    print("TEFAS Crawler başlatılırken hata: {}".format(e))
     tefas_crawler_global = None
 
 
@@ -108,7 +108,7 @@ def load_filtered_fund_list():
     listesini okur.
     """
     if not os.path.exists(INPUT_FILE):
-        print(f"HATA: Analiz için fon listesini içeren '{INPUT_FILE}' dosyası bulunamadı.")
+        print("HATA: Analiz için fon listesini içeren '{}' dosyası bulunamadı.".format(INPUT_FILE))
         print("Lütfen önce tarama script'ini çalıştırarak bu dosyayı oluşturun.")
         sys.exit(1)
 
@@ -116,10 +116,10 @@ def load_filtered_fund_list():
         fon_kodlari = [line.strip() for line in f if line.strip()]
 
     if not fon_kodlari:
-        print(f"UYARI: '{INPUT_FILE}' dosyası boş. Analiz edilecek fon bulunamadı.")
+        print("UYARI: '{}' dosyası boş. Analiz edilecek fon bulunamadı.".format(INPUT_FILE))
         sys.exit(0)
 
-    print(f"'{INPUT_FILE}' dosyasından {len(fon_kodlari)} adet fon kodu okundu.")
+    print("'{}' dosyasından {} adet fon kodu okundu.".format(INPUT_FILE, len(fon_kodlari)))
     return fon_kodlari
 
 
@@ -149,28 +149,83 @@ def fetch_data_for_fund_parallel(args):
         return fon_kodu, fon_adi, df.sort_values(by='date').reset_index(drop=True)
 
     except Exception as e:
-        print(f"HATA ({fon_kodu}): Veri çekilirken sorun oluştu - {e}")
+        print("HATA ({}): Veri çekilirken sorun oluştu - {}".format(fon_kodu, e))
         return fon_kodu, None, None
+
+
+def get_value_on_or_before(df, target_date, column='price'):
+    """Belirtilen tarihten önceki veya o tarihteki değeri döndürür."""
+    if df is None or df.empty or target_date is None:
+        return None
+    df_filtered = df[df['date'] <= target_date]
+    if not df_filtered.empty:
+        return df_filtered.sort_values('date', ascending=False)[column].iloc[0]
+    return None
 
 
 def hesapla_metrikler(df_fon_fiyat):
     """
     Bir fonun geçmiş fiyat verilerini kullanarak risk/getiri metriklerini hesaplar.
-    Not: v0.6.0 API'de market_cap ve number_of_investors sütunları kaldırılmıştır.
+    Tüm dönem getirileri: haftalık, 2 haftalık, aylık, 3 aylık, 6 aylık, yılbaşı, 1 yıl
     """
     if df_fon_fiyat is None or len(df_fon_fiyat) < 10:
         return None
 
+    df_fon_fiyat = df_fon_fiyat.sort_values('date').reset_index(drop=True)
     df_fon_fiyat['daily_return'] = df_fon_fiyat['price'].pct_change()
     df_fon_fiyat = df_fon_fiyat.dropna()
     if df_fon_fiyat.empty:
         return None
 
+    today = df_fon_fiyat['date'].max()
+
+    # Tüm dönem getirilerini hesapla
+    metrikler = {}
+
+    # 1 hafta (5 iş günü)
+    hafta1_fiyat = get_value_on_or_before(df_fon_fiyat, today - timedelta(days=7))
+    if hafta1_fiyat:
+        metrikler['Haftalik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / hafta1_fiyat) - 1) * 100, 2)
+
+    # 2 hafta (10 iş günü)
+    hafta2_fiyat = get_value_on_or_before(df_fon_fiyat, today - timedelta(days=14))
+    if hafta2_fiyat:
+        metrikler['2_Haftalik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / hafta2_fiyat) - 1) * 100, 2)
+
+    # 1 ay
+    ay1_fiyat = get_value_on_or_before(df_fon_fiyat, today - relativedelta(months=1))
+    if ay1_fiyat:
+        metrikler['Aylik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / ay1_fiyat) - 1) * 100, 2)
+
+    # 3 ay
+    ay3_fiyat = get_value_on_or_before(df_fon_fiyat, today - relativedelta(months=3))
+    if ay3_fiyat:
+        metrikler['3_Aylik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / ay3_fiyat) - 1) * 100, 2)
+
+    # 6 ay
+    ay6_fiyat = get_value_on_or_before(df_fon_fiyat, today - relativedelta(months=6))
+    if ay6_fiyat:
+        metrikler['6_Aylik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / ay6_fiyat) - 1) * 100, 2)
+
+    # Yılbaşından itibaren
+    yilbasi = date(today.year, 1, 1)
+    yilbasi_fiyat = get_value_on_or_before(df_fon_fiyat, yilbasi)
+    if yilbasi_fiyat:
+        metrikler['Yilbasi_%'] = round(((df_fon_fiyat['price'].iloc[-1] / yilbasi_fiyat) - 1) * 100, 2)
+
+    # 1 yıl
+    yil1_fiyat = get_value_on_or_before(df_fon_fiyat, today - relativedelta(years=1))
+    if yil1_fiyat:
+        metrikler['1_Yillik_%'] = round(((df_fon_fiyat['price'].iloc[-1] / yil1_fiyat) - 1) * 100, 2)
+
+    # Genel getiri (analiz dönemi)
     getiri = (df_fon_fiyat['price'].iloc[-1] / df_fon_fiyat['price'].iloc[0]) - 1
+    metrikler['Getiri_%'] = round(getiri * 100, 2)
+
+    # Volatilite ve Sharpe
     volatilite = df_fon_fiyat['daily_return'].std() * np.sqrt(252)
     ortalama_gunluk_getiri = df_fon_fiyat['daily_return'].mean()
 
-    # Sharpe Oranı
     gunluk_std = df_fon_fiyat['daily_return'].std()
     sharpe_orani = (ortalama_gunluk_getiri / gunluk_std) * np.sqrt(252) if gunluk_std != 0 else 0
 
@@ -182,12 +237,11 @@ def hesapla_metrikler(df_fon_fiyat):
         downside_deviation = negatif_getiriler.std() * np.sqrt(252)
         sortino_orani = (ortalama_gunluk_getiri * 252) / downside_deviation if downside_deviation != 0 else 0
 
-    return {
-        'Getiri (%)': round(getiri * 100, 2),
-        'Standart Sapma (Yıllık %)': round(volatilite * 100, 2),
-        'Sharpe Oranı (Yıllık)': round(sharpe_orani, 2),
-        'Sortino Oranı (Yıllık)': round(sortino_orani, 2),
-    }
+    metrikler['Volatilite_%'] = round(volatilite * 100, 2)
+    metrikler['Sharpe_Orani'] = round(sharpe_orani, 2)
+    metrikler['Sortino_Orani'] = round(sortino_orani, 2)
+
+    return metrikler
 
 
 def hesapla_6gunluk_trend(df_fon_fiyat):
@@ -300,11 +354,11 @@ def main():
     # İş günlerini göster
     try:
         is_gunleri = get_last_6_business_days()
-        print(f"\n[IS GUNU] Hesaplanan tarih aralıkları:")
-        print(f"  Önceki 3 iş günü: {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['previous_3_days']])}")
-        print(f"  Son 3 iş günü   : {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['recent_3_days']])}")
+        print("\n[IS GUNU] Hesaplanan tarih aralıkları:")
+        print("  Önceki 3 iş günü: {}".format(', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['previous_3_days']])))
+        print("  Son 3 iş günü   : {}".format(', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['recent_3_days']])))
     except Exception as e:
-        print(f"[HATA] İş günü hesaplama başarısız: {e}")
+        print("[HATA] İş günü hesaplama başarısız: {}".format(e))
 
     start_time = time.time()
 
@@ -317,7 +371,8 @@ def main():
     tasks = [(fon_kodu, start_date, end_date) for fon_kodu in fon_listesi]
     analiz_sonuclari = []
 
-    print(f"\n{len(fon_listesi)} adet fon için {start_date.strftime('%Y-%m-%d')} - {end_date.strftime('%Y-%m-%d')} tarih aralığında analiz başlatılıyor...")
+    print("\n{} adet fon için {} - {} tarih aralığında analiz başlatılıyor...".format(
+        len(fon_listesi), start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_fon = {executor.submit(fetch_data_for_fund_parallel, task): task[0] for task in tasks}
@@ -339,20 +394,26 @@ def main():
         return
 
     df_sonuc = pd.DataFrame(analiz_sonuclari)
-    sutun_sirasi = ['Fon Kodu', 'Fon Adı',
-                    'Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)',
-                    'Getiri (%)', 'Standart Sapma (Yıllık %)',
-                    'Son_3G_Ort_%', 'Onceki_3G_Ort_%', 'Trend_Yonu']
+    # Tüm metrikleri içeren sıralı liste
+    sutun_sirasi = [
+        'Fon Kodu', 'Fon Adı',
+        # Dönem getirileri
+        'Haftalik_%', '2_Haftalik_%', 'Aylik_%', '3_Aylik_%', '6_Aylik_%', 'Yilbasi_%', '1_Yillik_%', 'Getiri_%',
+        # Risk metrikleri
+        'Volatilite_%', 'Sharpe_Orani', 'Sortino_Orani',
+        # Kısa trend
+        'Son_3G_Ort_%', 'Onceki_3G_Ort_%', 'Trend_Yonu'
+    ]
     # Sadece mevcut sutunlari kullan
     sutun_sirasi = [col for col in sutun_sirasi if col in df_sonuc.columns]
     df_sonuc = df_sonuc[sutun_sirasi]
     df_sonuc_sirali = df_sonuc.sort_values(
-        by=['Sortino Oranı (Yıllık)', 'Sharpe Oranı (Yıllık)'],
+        by=['Sortino_Orani', 'Sharpe_Orani'],
         ascending=[False, False]
     )
 
-    excel_dosya_adi = f"Fonaliz_Sonuclari_{end_date.strftime('%Y-%m-%d')}_v2.xlsx"
-    print(f"\nAnaliz tamamlandı. Sonuçlar '{excel_dosya_adi}' dosyasına yazılıyor...")
+    excel_dosya_adi = "Fonaliz_Sonuclari_{}_v2.xlsx".format(end_date.strftime('%Y-%m-%d'))
+    print("\nAnaliz tamamlandı. Sonuçlar '{}' dosyasına yazılıyor...".format(excel_dosya_adi))
 
     try:
         with pd.ExcelWriter(excel_dosya_adi, engine='xlsxwriter') as writer:
@@ -361,12 +422,12 @@ def main():
             for i, col in enumerate(df_sonuc_sirali.columns):
                 column_len = max(df_sonuc_sirali[col].astype(str).map(len).max(), len(col)) + 2
                 worksheet.set_column(i, i, column_len)
-        print(f"'{excel_dosya_adi}' dosyası başarıyla oluşturuldu.")
+        print("'{}' dosyası başarıyla oluşturuldu.".format(excel_dosya_adi))
     except Exception as e:
-        print(f"HATA: Excel dosyası oluşturulurken bir sorun oluştu: {e}")
+        print("HATA: Excel dosyası oluşturulurken bir sorun oluştu: {}".format(e))
 
     end_time = time.time()
-    print(f"\n--- Tüm işlemler {end_time - start_time:.2f} saniyede tamamlandı ---")
+    print("\n--- Tüm işlemler {:.2f} saniyede tamamlandı ---".format(end_time - start_time))
 
 
 if __name__ == "__main__":

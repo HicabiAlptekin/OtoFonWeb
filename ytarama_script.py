@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ENTEGRE FON TARAMA VE ANALİZ ARACI (OtoFon + Fonaliz + Trend Analizi)
-# v3.2 - 6 Günlük Trend Analizi (Son 3 + Önceki 3 iş günü)
+# v3.3 - 6 Günlük Trend Analizi + Google Sheets + Tüm Metrikler
 #
 # Bu script:
 # 1. Takasbank'tan fon listesini alır
@@ -8,11 +8,13 @@
 # 3. Haftalık getiri analizi yapar
 # 4. 6 günlük kısa trend analizi yapar (son 3 iş günü + önceki 3 iş günü)
 # 5. Fonaliz risk/getiri metriklerini hesaplar
-# 6. Tüm sonuçları Excel dosyasına kaydeder
+# 6. Tüm sonuçları Excel ve Google Sheets'e kaydeder
 
 import pandas as pd
 import numpy as np
-import time
+import gspread
+import pytz
+import json
 import os
 import sys
 from datetime import datetime, timedelta, date
@@ -26,7 +28,14 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- SABİTLER ---
+GSPREAD_CREDENTIALS_SECRET = os.environ.get('GCP_SERVICE_ACCOUNT_KEY')
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
+SHEET_ID = '1hSD4towyxKk9QHZFAcRlXy9NlLa_AyVrB9Jsy86ok14'
+WORKSHEET_MANUAL = 'veriler'
+WORKSHEET_WEEKLY = 'haftalık'
+WORKSHEET_FONALIZ = 'Fonanaliz'
+WORKSHEET_TREND = 'Kısa Trend'
+TIMEZONE = pytz.timezone('Europe/Istanbul')
 MAX_WORKERS = 10
 TREND_GUN_SAYISI = 3  # Son 3 iş günü + Önceki 3 iş günü = toplam 6 gün
 EXCEL_DOSYASI = f"OtoFon_Raporu_{date.today().strftime('%Y-%m-%d')}.xlsx"
@@ -47,8 +56,49 @@ try:
     tefas_crawler_global = Crawler()
     print("[OK] TEFAS Crawler baslatildi.")
 except Exception as e:
-    print(f"[HATA] TEFAS Crawler: {e}")
+    print("[HATA] TEFAS Crawler: {}".format(e))
     tefas_crawler_global = None
+
+
+# --- GOOGLE SHEETS FONKSİYONLARI ---
+def google_sheets_auth():
+    """Google Sheets için kimlik doğrulama yapar."""
+    print("\n[OK] Google Sheets kimlik dogrulamasi...")
+    try:
+        if not GSPREAD_CREDENTIALS_SECRET:
+            print("[HATA] GCP_SERVICE_ACCOUNT_KEY bulunamadi.")
+            return None
+        gc = gspread.service_account_from_dict(json.loads(GSPREAD_CREDENTIALS_SECRET))
+        print("[OK] Google Sheets baglantisi basarili.")
+        return gc
+    except Exception as e:
+        print("[HATA] Google Sheets: {}".format(e))
+        traceback.print_exc()
+        return None
+
+
+def write_to_sheet(spreadsheet, worksheet_name, df_data, headers=None):
+    """DataFrame'i Google Sheets sayfasına yazar."""
+    try:
+        # Mevcut sayfayı al veya oluştur
+        try:
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            print("  [OK] '{}' sayfasi guncelleniyor...".format(worksheet_name))
+        except gspread.exceptions.WorksheetNotFound:
+            print("  [OK] '{}' sayfasi olusturuluyor...".format(worksheet_name))
+            worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1, cols=1)
+
+        # Veriyi temizle ve yaz
+        worksheet.clear()
+        if headers:
+            worksheet.append_row(headers)
+        if not df_data.empty:
+            df_data = df_data.fillna('')
+            worksheet.append_rows(df_data.values.tolist())
+
+        print("  [OK] {} satir yazildi.".format(len(df_data) + (1 if headers else 0)))
+    except Exception as e:
+        print("  [HATA] Sheet yazma: {}".format(e))
 
 
 # --- YARDIMCI FONKSİYONLAR ---
@@ -229,7 +279,6 @@ def write_to_excel(haftalik_df, trend_df, fonaliz_df, filename=EXCEL_DOSYASI):
     """DataFrame'leri Excel dosyasına çoklu sayfa olarak yazar."""
     try:
         with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
-            workbook = writer.book
 
             # --- Sayfa 1: Haftalık Getiriler ---
             if haftalik_df is not None and not haftalik_df.empty:
@@ -455,7 +504,7 @@ def run_weekly_scan(num_weeks=2):
     df_sonuc = pd.DataFrame(sonuclar)
 
     # Trend dağılımı
-    print(f"\n[TREND] Dagitim:")
+    print("\n[TREND] Dagitim:")
     for yon in ['HIZLANAN', 'YUKSELEN', 'DONUS', 'DUSUS', 'DUSEN', 'VERI_YOK']:
         sayi = len(df_sonuc[df_sonuc['Trend_Yonu'] == yon])
         if sayi > 0:
@@ -511,18 +560,18 @@ def run_fonaliz(fon_listesi):
 # --- ANA ÇALIŞTIRMA ---
 if __name__ == '__main__':
     print("=" * 50)
-    print("OtoFon v3.2 - Entegre Fon Tarama ve Analiz")
-    print("6 Günlük İş Günü Trend Analizi (Son 3 + Önceki 3)")
+    print("OtoFon v3.3 - Entegre Fon Tarama ve Analiz")
+    print("6 Günlük İş Günü Trend Analizi + Google Sheets")
     print("=" * 50)
 
     # İş günlerini hesapla ve göster
     try:
         is_gunleri = get_last_6_business_days()
-        print(f"\n[IS GUNU] Hesaplanan tarih aralıkları:")
-        print(f"  Önceki 3 iş günü: {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['previous_3_days']])}")
-        print(f"  Son 3 iş günü   : {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['recent_3_days']])}")
+        print("\n[IS GUNU] Hesaplanan tarih aralıkları:")
+        print("  Önceki 3 iş günü: {}".format(', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['previous_3_days']])))
+        print("  Son 3 iş günü   : {}".format(', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['recent_3_days']])))
     except Exception as e:
-        print(f"[HATA] İş günü hesaplama başarısız: {e}")
+        print("[HATA] İş günü hesaplama başarısız: {}".format(e))
 
     scan_type = sys.argv[1].lower() if len(sys.argv) > 1 else 'weekly'
 
@@ -564,17 +613,45 @@ if __name__ == '__main__':
             # Ayrıca filtrelenmiş fon listesini txt olarak kaydet
             with open('filtrelenmis_fonlar.txt', 'w', encoding='utf-8') as f:
                 for kod in fonaliz_fonlar:
-                    f.write(f"{kod}\n")
-            print(f"[OK] filtrelenmis_fonlar.txt kaydedildi ({len(fonaliz_fonlar)} fon)")
+                    f.write("{}\n".format(kod))
+            print("[OK] filtrelenmis_fonlar.txt kaydedildi ({} fon)".format(len(fonaliz_fonlar)))
 
-        print(f"\n{'='*50}")
-        print(f"[OK] Tum islemler tamamlandi!")
-        print(f"{'='*50}")
-        print(f"[RAPOR] Excel: {EXCEL_DOSYASI}")
-        print(f"  - Sayfa 1: 'Haftalik' - Haftalik getiriler")
-        print(f"  - Sayfa 2: 'Kisa Trend' - 3 gunluk trend analizi")
-        print(f"  - Sayfa 3: 'Fonaliz' - Risk/Getiri metrikleri")
-        print(f"[SONUC] {len(fonaliz_fonlar)} fon yukselis trendinde ve filtreleri gecti.")
+        # Google Sheets'e yaz
+        print("\n[SHEET] Google Sheets'e yaziluyor...")
+        gc = google_sheets_auth()
+        if gc:
+            try:
+                sh = gc.open_by_key(SHEET_ID)
+                # Haftalık sonuçları yaz
+                if df_sonuc is not None and not df_sonuc.empty:
+                    haftalik_headers = list(df_sonuc.columns)
+                    write_to_sheet(sh, WORKSHEET_WEEKLY, df_sonuc, haftalik_headers)
+
+                # Kısa trend yaz
+                if df_sonuc is not None and not df_sonuc.empty:
+                    trend_headers = ['Fon Kodu', 'Fon Adı', 'Son_3G_Ort_%', 'Onceki_3G_Ort_%', 'Trend_Yonu']
+                    trend_data = df_sonuc[['Fon Kodu', 'Fon Adı', 'Son_3G_Ort_%', 'Onceki_3G_Ort_%', 'Trend_Yonu']].copy()
+                    write_to_sheet(sh, WORKSHEET_TREND, trend_data, trend_headers)
+
+                # Fonaliz yaz
+                if df_fonaliz is not None and not df_fonaliz.empty:
+                    fonaliz_headers = list(df_fonaliz.columns)
+                    write_to_sheet(sh, WORKSHEET_FONALIZ, df_fonaliz, fonaliz_headers)
+
+                print("[OK] Google Sheets guncellendi.")
+            except Exception as e:
+                print("[HATA] Google Sheets: {}".format(e))
+        else:
+            print("[BILGI] Google Sheets kimlik dogrulamasi basarisiz - Excel ile devam ediliyor.")
+
+        print("\n{}".format("="*50))
+        print("[OK] Tum islemler tamamlandi!")
+        print("{}".format("="*50))
+        print("[RAPOR] Excel: {}".format(EXCEL_DOSYASI))
+        print("  - Sayfa 1: 'Haftalik' - Haftalik getiriler")
+        print("  - Sayfa 2: 'Kisa Trend' - 6 gunluk trend analizi")
+        print("  - Sayfa 3: 'Fonaliz' - Risk/Getiri metrikleri")
+        print("[SONUC] {} fon yukselis trendinde ve filtreleri gecti.".format(len(fonaliz_fonlar)))
 
     else:
         print(f"[HATA] Gecersiz parametre: {scan_type}. 'weekly' veya 'single' kullanin.")
