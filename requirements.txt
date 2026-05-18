@@ -1,9 +1,10 @@
 pandas
 numpy
-tefas-crawler>=0.6.0
+gspread
+pytz
+python-dateutil
+tefas>=0.6.0
+tqdm
 openpyxl
 xlsxwriter
 ruff
-pytz
-tqdm
-python-dateutil
