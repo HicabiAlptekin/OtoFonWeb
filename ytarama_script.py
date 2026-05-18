@@ -19,7 +19,7 @@ import os
 import sys
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
-from tefas import Crawler
+from tefas import Historical
 from tqdm import tqdm
 import concurrent.futures
 import traceback
@@ -51,13 +51,13 @@ RESMI_TATILLER_2026 = [
     date(2026, 10, 29), # Cumhuriyet Bayramı
 ]
 
-# Global TEFAS crawler
+# Global TEFAS Historical nesnesi
 try:
-    tefas_crawler_global = Crawler()
-    print("[OK] TEFAS Crawler baslatildi.")
+    tefas_historical_global = Historical()
+    print("[OK] TEFAS Historical baslatildi.")
 except Exception as e:
-    print("[HATA] TEFAS Crawler: {}".format(e))
-    tefas_crawler_global = None
+    print("[HATA] TEFAS Historical: {}".format(e))
+    tefas_historical_global = None
 
 
 # --- GOOGLE SHEETS FONKSİYONLARI ---
@@ -220,25 +220,44 @@ def calculate_change(current_price, past_price):
 
 
 def fetch_fund_data(args):
-    """TEFAS v0.6.0 API ile fon verisi çeker."""
+    """TEFAS Historical API ile fon verisi çeker."""
     fon_kodu, start_date, end_date = args
-    global tefas_crawler_global
-    if tefas_crawler_global is None:
+    global tefas_historical_global
+    if tefas_historical_global is None:
         return fon_kodu, None, None
 
     try:
-        df = tefas_crawler_global.fetch(
+        df = tefas_historical_global.fetch(
             start=start_date.strftime("%Y-%m-%d"),
             end=end_date.strftime("%Y-%m-%d"),
-            name=fon_kodu,
-            columns=["date", "price", "title"]
+            name=fon_kodu
         )
         if df.empty:
             return fon_kodu, None, None
-        df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.date
+        
+        # DataFrame'in sütunlarını kontrol et ve normalize et
+        df.columns = df.columns.str.lower()
+        
+        if 'date' not in df.columns:
+            df['date'] = pd.to_datetime(df.index)
+        else:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        
+        df['date'] = df['date'].dt.date
         df = df.dropna(subset=['date'])
+        
+        # Fiyat sütunu ismini standartlaştır
+        if 'price' not in df.columns and 'value' in df.columns:
+            df['price'] = df['value']
+        
         df = df.sort_values(by='date').reset_index(drop=True)
-        fon_adi = df['title'].iloc[0] if 'title' in df.columns else fon_kodu
+        
+        # Fon adını al
+        if 'title' in df.columns:
+            fon_adi = df['title'].iloc[0]
+        else:
+            fon_adi = fon_kodu
+        
         return fon_kodu, fon_adi, df
     except Exception as e:
         print(f"  [UYARI] {fon_kodu}: Veri cekme hatasi - {e}")
