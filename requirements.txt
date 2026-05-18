@@ -8,3 +8,4 @@ tqdm
 openpyxl
 xlsxwriter
 ruff
+webdriver_manager
