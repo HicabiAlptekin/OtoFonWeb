@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # ENTEGRE FON TARAMA VE ANALİZ ARACI (OtoFon + Fonaliz + Trend Analizi)
-# v3.1 - tefas-crawler v0.6.0+ API + 3 Günlük Trend Analizi + Excel Çıktısı
+# v3.2 - 6 Günlük Trend Analizi (Son 3 + Önceki 3 iş günü)
 #
 # Bu script:
 # 1. Takasbank'tan fon listesini alır
 # 2. TEFAS API'sinden (v0.6.0+) fon verilerini çeker
 # 3. Haftalık getiri analizi yapar
-# 4. 3 günlük kısa trend analizi yapar
+# 4. 6 günlük kısa trend analizi yapar (son 3 iş günü + önceki 3 iş günü)
 # 5. Fonaliz risk/getiri metriklerini hesaplar
 # 6. Tüm sonuçları Excel dosyasına kaydeder
 
@@ -28,8 +28,19 @@ warnings.filterwarnings('ignore')
 # --- SABİTLER ---
 TAKASBANK_EXCEL_URL = 'https://www.takasbank.com.tr/plugins/ExcelExportTefasFundsTradingInvestmentPlatform?language=tr'
 MAX_WORKERS = 10
-TREND_GUN_SAYISI = 3
+TREND_GUN_SAYISI = 3  # Son 3 iş günü + Önceki 3 iş günü = toplam 6 gün
 EXCEL_DOSYASI = f"OtoFon_Raporu_{date.today().strftime('%Y-%m-%d')}.xlsx"
+
+# Resmi tatiller (2026) - gerektiğinde güncellenir
+RESMI_TATILLER_2026 = [
+    date(2026, 1, 1),   # Yılbaşı
+    date(2026, 4, 23),  # Ulusal Egemenlik ve Çocuk Bayramı
+    date(2026, 5, 1),   # Emek ve Dayanışma Günü
+    date(2026, 5, 19),  # Atatürk'ü Anma, Gençlik ve Spor Bayramı
+    date(2026, 7, 15),  # Demokrasi ve Milli Birlik Günü
+    date(2026, 8, 30),  # Zafer Bayramı
+    date(2026, 10, 29), # Cumhuriyet Bayramı
+]
 
 # Global TEFAS crawler
 try:
@@ -64,6 +75,80 @@ def get_value_on_or_before(df_fund, target_date, column='price'):
     if not df_filtered.empty:
         return df_filtered.sort_values(by='date', ascending=False)[column].iloc[0]
     return np.nan
+
+
+def is_business_day(check_date):
+    """Belirtilen tarihin iş günü olup olmadığını kontrol eder (hafta sonu ve resmi tatil değil)."""
+    # Hafta sonu kontrolü (Cumartesi=5, Pazar=6)
+    if check_date.weekday() >= 5:
+        return False
+    # Resmi tatil kontrolü
+    if check_date in RESMI_TATILLER_2026:
+        return False
+    return True
+
+
+def get_business_days(count, end_date=None):
+    """
+    Belirtilen sayıda iş gününü döndürür.
+    end_date verilirse o tarihten geriye, yoksa bugünden geriye sayar.
+    """
+    if end_date is None:
+        end_date = date.today()
+
+    # Bugün iş günü mü kontrol et, değilse son iş gününe git
+    current_date = end_date
+    if not is_business_day(current_date):
+        current_date = get_previous_business_day(current_date)
+
+    business_days = []
+    while len(business_days) < count:
+        if is_business_day(current_date):
+            business_days.append(current_date)
+        current_date = get_previous_business_day(current_date)
+
+    return business_days
+
+
+def get_previous_business_day(input_date):
+    """Bir önceki iş gününü döndürür."""
+    prev_day = input_date - timedelta(days=1)
+    while not is_business_day(prev_day):
+        prev_day -= timedelta(days=1)
+    return prev_day
+
+
+def get_last_6_business_days():
+    """
+    Son 6 iş gününü döndürür:
+    - Son 3 iş günü (güncel dönem)
+    - Önceki 3 iş günü (bir önceki dönem)
+    """
+    today = date.today()
+
+    # Bugün iş günü mü kontrol et
+    if not is_business_day(today):
+        current_end = get_previous_business_day(today)
+    else:
+        current_end = today
+
+    # Son 3 iş günü (güncel)
+    last_3_days = get_business_days(3, current_end)
+
+    # Son 3 iş gününden bir önceki iş günü
+    first_of_previous = get_previous_business_day(last_3_days[-1])
+
+    # Önceki 3 iş günü
+    previous_3_days = get_business_days(3, first_of_previous)
+
+    # Birleştir: önceki 3 + son 3 (kronolojik sırayla)
+    all_days = previous_3_days + last_3_days
+
+    return {
+        'recent_3_days': last_3_days,      # En son 3 iş günü
+        'previous_3_days': previous_3_days, # Bir önceki 3 iş günü
+        'all_6_days': all_days             # Tüm 6 gün (kronolojik)
+    }
 
 
 def get_value_on_or_after(df_fund, target_date, column='price'):
@@ -288,36 +373,67 @@ def run_weekly_scan(num_weeks=2):
             hafta1_getiri = calculate_change(fiyat_1w, fiyat_2w)
             toplam_getiri = (hafta1_getiri + hafta2_getiri) if pd.notna(hafta1_getiri) and pd.notna(hafta2_getiri) else np.nan
 
-            # 3 günlük trend analizi
+            # 6 günlük (son 3 + önceki 3) iş günü trend analizi
             son_3g_ort = np.nan
             onceki_3g_ort = np.nan
             trend_skoru = np.nan
             trend_yonu = "VERI_YOK"
 
-            if len(data) >= TREND_GUN_SAYISI * 2 + 1:
-                df_trend = data.copy()
-                df_trend['daily_return'] = df_trend['price'].pct_change() * 100
-                df_trend = df_trend.dropna().tail(TREND_GUN_SAYISI * 2)
+            # İş günlerini hesapla
+            try:
+                is_gunleri = get_last_6_business_days()
+                recent_days = is_gunleri['recent_3_days']  # Son 3 iş günü
+                previous_days = is_gunleri['previous_3_days']  # Önceki 3 iş günü
+            except Exception as e:
+                print(f"  [UYARI] {kod}: İş günü hesaplama hatası - {e}")
+                recent_days = []
+                previous_days = []
 
-                if len(df_trend) >= TREND_GUN_SAYISI * 2:
-                    son_3g = df_trend.tail(TREND_GUN_SAYISI)['daily_return']
-                    onceki_3g = df_trend.head(TREND_GUN_SAYISI)['daily_return']
-                    son_3g_ort = son_3g.mean()
-                    onceki_3g_ort = onceki_3g.mean()
+            if len(data) >= 10 and len(recent_days) == 3 and len(previous_days) == 3:
+                # Fiyatları al
+                fiyatlar = {}
+                for tarih in set(recent_days + previous_days):
+                    fiyat = get_value_on_or_before(data, tarih)
+                    if pd.notna(fiyat):
+                        fiyatlar[tarih] = fiyat
 
+                # Son 3 iş günü getirileri
+                if len(fiyatlar) >= 4:  # En az 4 fiyat noktası
+                    son_3_getiriler = []
+                    for i in range(len(recent_days) - 1):
+                        if recent_days[i] in fiyatlar and recent_days[i+1] in fiyatlar:
+                            degisim = calculate_change(fiyatlar[recent_days[i]], fiyatlar[recent_days[i+1]])
+                            if pd.notna(degisim):
+                                son_3_getiriler.append(degisim)
+
+                    # Önceki 3 iş günü getirileri
+                    onceki_3_getiriler = []
+                    for i in range(len(previous_days) - 1):
+                        if previous_days[i] in fiyatlar and previous_days[i+1] in fiyatlar:
+                            degisim = calculate_change(fiyatlar[previous_days[i]], fiyatlar[previous_days[i+1]])
+                            if pd.notna(degisim):
+                                onceki_3_getiriler.append(degisim)
+
+                    if son_3_getiriler:
+                        son_3g_ort = np.mean(son_3_getiriler)
+                    if onceki_3_getiriler:
+                        onceki_3g_ort = np.mean(onceki_3_getiriler)
+
+                    # Trend skor ve yön hesapla
                     if pd.notna(onceki_3g_ort) and onceki_3g_ort != 0:
-                        trend_skoru = son_3g_ort / onceki_3g_ort
-                    elif son_3g_ort > 0:
+                        trend_skoru = son_3g_ort / onceki_3g_ort if pd.notna(son_3g_ort) else np.nan
+                    elif pd.notna(son_3g_ort) and son_3g_ort > 0:
                         trend_skoru = son_3g_ort
 
-                    if son_3g_ort > 0 and onceki_3g_ort > 0:
-                        trend_yonu = "HIZLANAN" if son_3g_ort > onceki_3g_ort else "YUKSELEN"
-                    elif son_3g_ort > 0 and onceki_3g_ort <= 0:
-                        trend_yonu = "DONUS"
-                    elif son_3g_ort <= 0 and onceki_3g_ort > 0:
-                        trend_yonu = "DUSUS"
-                    else:
-                        trend_yonu = "DUSEN"
+                    if pd.notna(son_3g_ort) and pd.notna(onceki_3g_ort):
+                        if son_3g_ort > 0 and onceki_3g_ort > 0:
+                            trend_yonu = "HIZLANAN" if son_3g_ort > onceki_3g_ort else "YUKSELEN"
+                        elif son_3g_ort > 0 and onceki_3g_ort <= 0:
+                            trend_yonu = "DONUS"
+                        elif son_3g_ort <= 0 and onceki_3g_ort > 0:
+                            trend_yonu = "DUSUS"
+                        else:
+                            trend_yonu = "DUSEN"
 
             sonuc = {
                 'Fon Kodu': kod,
@@ -395,8 +511,18 @@ def run_fonaliz(fon_listesi):
 # --- ANA ÇALIŞTIRMA ---
 if __name__ == '__main__':
     print("=" * 50)
-    print("OtoFon v3.1 - Entegre Fon Tarama ve Analiz")
+    print("OtoFon v3.2 - Entegre Fon Tarama ve Analiz")
+    print("6 Günlük İş Günü Trend Analizi (Son 3 + Önceki 3)")
     print("=" * 50)
+
+    # İş günlerini hesapla ve göster
+    try:
+        is_gunleri = get_last_6_business_days()
+        print(f"\n[IS GUNU] Hesaplanan tarih aralıkları:")
+        print(f"  Önceki 3 iş günü: {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['previous_3_days']])}")
+        print(f"  Son 3 iş günü   : {', '.join([d.strftime('%d.%m.%Y') for d in is_gunleri['recent_3_days']])}")
+    except Exception as e:
+        print(f"[HATA] İş günü hesaplama başarısız: {e}")
 
     scan_type = sys.argv[1].lower() if len(sys.argv) > 1 else 'weekly'
 
